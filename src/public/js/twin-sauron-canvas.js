@@ -110,7 +110,8 @@ export class TwinSauronCanvas {
   }
 
   update() {
-    this.t += 0.016;
+    // Keep ambient patrols slow enough to stay behind the working UI.
+    this.t += 0.004;
 
     if (this.mode === 'CONVERGE_OFFENDING_CUBICLE' && this.targetCubicleId) {
       const el = document.getElementById(this.targetCubicleId);
@@ -208,12 +209,12 @@ export class TwinSauronCanvas {
     const p2x = beam.x - nx * spread;
     const p2y = beam.y - ny * spread;
 
-    // Linear cone gradient
+    // Linear cone gradient (softened so ambient sweep never distracts)
     const grad = ctx.createLinearGradient(p0x, p0y, beam.x, beam.y);
-    grad.addColorStop(0, 'rgba(255, 40, 50, 0.7)');
-    grad.addColorStop(0.2, 'rgba(239, 68, 68, 0.4)');
-    grad.addColorStop(0.7, 'rgba(185, 28, 28, 0.15)');
-    grad.addColorStop(1, 'rgba(127, 29, 29, 0.02)');
+    grad.addColorStop(0, 'rgba(255, 40, 50, 0.24)');
+    grad.addColorStop(0.2, 'rgba(239, 68, 68, 0.13)');
+    grad.addColorStop(0.7, 'rgba(185, 28, 28, 0.05)');
+    grad.addColorStop(1, 'rgba(127, 29, 29, 0.01)');
 
     ctx.fillStyle = grad;
     ctx.beginPath();
@@ -225,8 +226,8 @@ export class TwinSauronCanvas {
 
     // Target impact spotlight pool
     const poolGrad = ctx.createRadialGradient(beam.x, beam.y, 0, beam.x, beam.y, spread * 1.2);
-    poolGrad.addColorStop(0, 'rgba(255, 80, 90, 0.45)');
-    poolGrad.addColorStop(0.5, 'rgba(239, 68, 68, 0.2)');
+    poolGrad.addColorStop(0, 'rgba(255, 80, 90, 0.18)');
+    poolGrad.addColorStop(0.5, 'rgba(239, 68, 68, 0.08)');
     poolGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     ctx.fillStyle = poolGrad;

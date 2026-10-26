@@ -1,0 +1,24 @@
+{
+    "title":  "Draggable console edge over cubicle roster",
+    "description":  "Supersedes the one-fifth shrink request: keep the roster at its normal size and let the console\u0027s left edge drag over it to cover or reveal it. Implementation added; verify mouse dragging and viewport behavior in the live UI.",
+    "priority":  "HIGH",
+    "column":  "done",
+    "assigned_cubicle":  null,
+    "progress_percent":  100,
+    "subswarm_active":  false,
+    "subswarm_manifest_path":  null,
+    "git_branch":  null,
+    "git_diff_summary":  null,
+    "verification_commands":  [
+                                  "npm test"
+                              ],
+    "verification_passed":  true,
+    "error_log":  null,
+    "id":  "task-mvpn06iq-vact",
+    "created_at":  "2026-10-26T19:15:56.546Z",
+    "claimed_at":  null,
+    "completed_at":  "2026-10-26T19:34:22.8399870Z",
+    "veto_history":  [
+
+                     ]
+}

@@ -103,11 +103,14 @@ export class CLIEngine {
       apiKeyEnvVar: string;
     }
   ): Promise<{ command: string; promptFilePath: string }> {
-    const promptFilePath = await this.stagePromptFile(params.taskId, params.prompt);
+    const helper = path.join(this.baseDir, 'scripts', 'cubicle-message.mjs');
+    const collaboration = `\n\nCubicle collaboration: your address is ${params.cubicleId}. Discover peers and their current tasks with GET /api/cubicles on the local Swarm server. For related work, exchange findings or ask focused questions using: node "${helper}" send ${params.cubicleId} <peer> <topic> "message". Read your durable inbox and sent history using: node "${helper}" list ${params.cubicleId}. Check at task start, before editing shared interfaces, and before submission. Messages are advisory, not task assignments or approvals; do not wait indefinitely for replies. Stored does not mean read. Keep task details on the right taskboard.`;
+    const workerPrompt = params.prompt + collaboration;
+    const promptFilePath = await this.stagePromptFile(params.taskId, workerPrompt);
     const apiKey = CLIEngine.resolveApiKey(params.apiKeyEnvVar);
 
     const context: Record<string, string | number> = {
-      prompt: params.prompt.replace(/"/g, '\\"'),
+      prompt: workerPrompt.replace(/"/g, '\\"'),
       prompt_file: promptFilePath,
       model: params.model,
       thinking_level: params.thinkingLevel,

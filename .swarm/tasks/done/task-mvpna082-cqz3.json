@@ -1,0 +1,25 @@
+{
+    "priority":  "MEDIUM",
+    "title":  "Throttle distracting red spotlights",
+    "description":  "Slow down and soften the moving red spotlight animations in the Panopticon viewport so they do not distract the Overseer.",
+    "column":  "review",
+    "verification_commands":  [
+                                  "node --check src/public/js/twin-sauron-canvas.js",
+                                  "node node_modules/vitest/vitest.mjs run --reporter=dot"
+                              ],
+    "id":  "task-mvpna082-cqz3",
+    "assigned_cubicle":  null,
+    "created_at":  "2026-10-26T19:23:34.946Z",
+    "claimed_at":  null,
+    "completed_at":  null,
+    "progress_percent":  90,
+    "subswarm_active":  false,
+    "subswarm_manifest_path":  null,
+    "git_branch":  null,
+    "git_diff_summary":  "Ferric: ambient spotlight sweep reduced to quarter speed; canvas opacity reduced to 35%. Live visual review pending.",
+    "verification_passed":  true,
+    "veto_history":  [
+
+                     ],
+    "error_log":  null
+}

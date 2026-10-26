@@ -53,7 +53,10 @@ describe('Milestone 3: Panopticon UI, Backend Media, Filesystem & Consular Inter
       ? __dirname
       : path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
     const projectRoot = path.resolve(currentDir, '../../');
-    serverInstance = await createSwarmServer(projectRoot, testPort);
+    // Serve real UI assets but keep all mutable state in the test sandbox.
+    await fs.mkdir(path.join(sandbox.sandboxDir, 'src'), { recursive: true });
+    await fs.cp(path.join(projectRoot, 'src', 'public'), path.join(sandbox.sandboxDir, 'src', 'public'), { recursive: true });
+    serverInstance = await createSwarmServer(sandbox.sandboxDir, testPort);
 
     await new Promise<void>((resolve) => {
       serverInstance.server.listen(testPort, () => {

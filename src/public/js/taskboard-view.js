@@ -27,6 +27,41 @@ export class TaskboardViewController {
     this.counterDone = document.getElementById('counter-done');
 
     this.bindInterventionActions();
+    document.getElementById('task-create-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const status = document.getElementById('task-create-status');
+      const button = form.querySelector('button');
+      button.disabled = true;
+      try {
+        const values = Object.fromEntries(new FormData(form));
+        const response = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not create task');
+        form.reset();
+        status.textContent = 'Task added';
+        await this.app.refreshTasks();
+      } catch (error) { status.textContent = error.message; }
+      finally { button.disabled = false; }
+    });
+    document.getElementById('cubicle-chat')?.addEventListener('toggle', () => this.refreshMessages());
+  }
+
+  async refreshMessages() {
+    const history = document.getElementById('cubicle-message-history');
+    if (!history || !document.getElementById('cubicle-chat')?.open) return;
+    try {
+      const response = await fetch('/api/messages');
+      if (!response.ok) throw new Error('Collaboration requires the updated server');
+      const { messages } = await response.json();
+      history.replaceChildren();
+      for (const message of messages.slice(-50)) {
+        const entry = document.createElement('p');
+        entry.textContent = `${message.from} → ${message.to} [${message.topic}]: ${message.text}`;
+        history.appendChild(entry);
+      }
+      if (!messages.length) history.textContent = 'No messages yet';
+    } catch (error) { history.textContent = error.message; }
   }
 
   bindInterventionActions() {
@@ -150,17 +185,20 @@ export class TaskboardViewController {
         card.className = 'kanban-task-card';
         card.style.cssText = 'background: #111420; border: 1px solid var(--border-color); padding: 8px; font-size: 11px; display: flex; flex-direction: column; gap: 4px;';
 
-        const origin = t.origin || (t.title?.includes('[OPENCLAW]') ? 'OPENCLAW' : (t.title?.includes('[HERMES]') ? 'HERMES' : 'USER'));
-        const assigned = t.assigned_cubicle || 'UNASSIGNED';
-        const progress = t.progress_percent || 0;
+        const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        const origin = escape(t.origin || (t.title?.includes('[OPENCLAW]') ? 'OPENCLAW' : (t.title?.includes('[HERMES]') ? 'HERMES' : 'USER')));
+        const assigned = escape(t.assigned_cubicle || 'UNASSIGNED');
+        const progress = Math.max(0, Math.min(100, Number(t.progress_percent) || 0));
 
         card.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="badge-tag">${t.id}</span>
+            <span class="badge-tag">${escape(t.priority || 'MEDIUM')}</span>
             <span class="badge-tag tag-cyan">[${origin}]</span>
           </div>
-          <div style="font-weight: 700; color: var(--color-text-bright); line-height: 1.3;">${t.title}</div>
-          <div style="font-size: 10px; color: var(--color-text-dim);">${t.description || ''}</div>
+          <details><summary style="color:#62b6ff;cursor:pointer;overflow-wrap:anywhere;">${escape(t.title)}</summary>
+            <div style="white-space:pre-wrap;overflow-wrap:anywhere;">${escape(t.description)}</div>
+            <small>${escape(t.id)}</small>
+          </details>
           <div style="display: flex; justify-content: space-between; font-size: 9px; margin-top: 4px;">
             <span>ASSIGNED: <strong>${assigned.toUpperCase()}</strong></span>
             <span>${progress}%</span>

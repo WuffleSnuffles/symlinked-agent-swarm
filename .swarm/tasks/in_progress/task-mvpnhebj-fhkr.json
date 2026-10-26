@@ -1,0 +1,20 @@
+{
+  "priority": "HIGH",
+  "title": "Real Gemini quota fatigue bar & verified cubicle dispatch",
+  "description": "Replace misleading 100% local budget stamina with actual Gemini account usage/fatigue telemetry (or 'unknown' if unavailable) and replace static 'Initialized, standing by' text with verified live cubicle process status.",
+  "column": "in_progress",
+  "id": "task-mvpnhebj-fhkr",
+  "assigned_cubicle": "cubicle-03",
+  "created_at": "2026-10-26T19:29:19.807Z",
+  "claimed_at": "2026-10-26T19:37:02.031Z",
+  "completed_at": null,
+  "progress_percent": 0,
+  "subswarm_active": false,
+  "subswarm_manifest_path": null,
+  "git_branch": "swarm/cubicle-03",
+  "git_diff_summary": null,
+  "verification_commands": [],
+  "verification_passed": null,
+  "veto_history": [],
+  "error_log": null
+}

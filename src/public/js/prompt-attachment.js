@@ -68,7 +68,35 @@ export class PromptAttachmentManager {
       });
     }
 
-    // 3. Drag and Drop Zone
+    // 3. Clipboard Image/File Paste on Prompt Input & Dropzone
+    const promptInput = document.getElementById('overseer-prompt-input');
+    const pasteTarget = promptInput || this.dropzone;
+    if (pasteTarget) {
+      pasteTarget.addEventListener('paste', (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        let handledImage = false;
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'file') {
+            const file = item.getAsFile();
+            if (file) {
+              const ext = (file.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+              const namedFile = file.name && file.name !== 'image.png'
+                ? file
+                : new File([file], `clipboard-${Date.now()}.${ext}`, { type: file.type });
+              this.addFileAttachment(namedFile);
+              handledImage = true;
+            }
+          }
+        }
+        if (handledImage) {
+          e.preventDefault();
+        }
+      });
+    }
+
+    // 4. Drag and Drop Zone
     if (this.dropzone) {
       this.dropzone.addEventListener('dragover', (e) => {
         e.preventDefault();
@@ -178,13 +206,16 @@ export class PromptAttachmentManager {
   }
 
   addFileAttachment(file, customPath = null) {
+    const isImage = file && typeof file.type === 'string' && file.type.startsWith('image/');
+    const previewUrl = isImage && typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(file) : null;
     this.stagedAttachments.push({
       id: 'att_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      type: 'FILE',
+      type: isImage ? 'IMAGE' : 'FILE',
       name: file.name,
       path: customPath || file.name,
       size: file.size,
       rawFile: file,
+      previewUrl,
     });
     this.renderChips();
   }
@@ -254,8 +285,12 @@ export class PromptAttachmentManager {
       const sizeStr = this.formatBytes(att.size);
       const detailStr = att.type === 'FOLDER' ? `${att.fileCount} files (${sizeStr})` : sizeStr;
 
+      const thumbHtml = att.previewUrl
+        ? `<img class="chip-thumb" src="${att.previewUrl}" alt="${att.name}" />`
+        : `<span class="chip-badge">${att.type}</span>`;
+
       chip.innerHTML = `
-        <span class="chip-badge">${att.type}</span>
+        ${thumbHtml}
         <span class="chip-path" title="${att.path}">${att.path}</span>
         <span class="chip-stat">${detailStr}</span>
         <button type="button" class="chip-btn-remove" title="Remove attachment">×</button>

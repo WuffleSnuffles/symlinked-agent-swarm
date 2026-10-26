@@ -1,0 +1,20 @@
+{
+  "priority": "HIGH",
+  "title": "Fix pasted image delivery to Consul models",
+  "description": "Regression: pasted screenshot reaches Consuls as filename only. Trace src/public/js/prompt-attachment.js and overseer-console.js through governance-routes.ts and consular-engine.ts. consular-engine.ts currently serializes attachments into names around line 785. Implement actual image-byte upload/persistence and image inputs to both CLI providers, with correct supported CLI flags verified locally, preview, image-only sends, size/type validation and visible failures. Preserve unrelated work. Add focused regression coverage proving actual image content reaches provider invocation, run build and relevant tests, and report exact results plus any live verification limitations. Do not claim completion from filenames alone.",
+  "column": "todo",
+  "id": "task-mvpnu2xu-nr88",
+  "assigned_cubicle": null,
+  "created_at": "2026-10-26T19:39:11.586Z",
+  "claimed_at": null,
+  "completed_at": null,
+  "progress_percent": 0,
+  "subswarm_active": false,
+  "subswarm_manifest_path": null,
+  "git_branch": null,
+  "git_diff_summary": null,
+  "verification_commands": [],
+  "verification_passed": null,
+  "veto_history": [],
+  "error_log": null
+}

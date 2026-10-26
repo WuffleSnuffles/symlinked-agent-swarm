@@ -170,13 +170,14 @@ export class TaskboardManager {
 
       // Winner enriches task payload while holding claimGate
       try {
-        const raw = await fs.readFile(dst, 'utf8');
+        const raw = (await fs.readFile(dst, 'utf8')).replace(/^\uFEFF/, '');
         const task: SwarmTask = JSON.parse(raw);
         task.column = 'in_progress';
         task.assigned_cubicle = cubicleId;
         task.claimed_at = new Date().toISOString();
         task.git_branch = `swarm/${cubicleId}`;
         await fs.writeFile(dst, JSON.stringify(task, null, 2), 'utf8');
+        await fs.unlink(claimGate).catch(() => {});
         await this.syncTaskboardMarkdown();
         return task;
       } catch (err: any) {

@@ -73,46 +73,36 @@
   color: var(--color-crimson);
 }
 
-/* Prompt Action Toolbar */
-.prompt-action-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px;
-  background: #0d0f15;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.attachment-button-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn-prompt-tool {
-  background: var(--bg-card);
+/* Minimal Plus (+) Attachment Button in Prompt Bar */
+.btn-prompt-plus {
+  background: transparent;
   color: var(--color-text-dim);
-  border: 1px solid var(--border-color);
+  border: none;
+  border-right: 1px solid var(--border-color);
+  width: 38px;
+  min-width: 38px;
   font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 3px 8px;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   transition: all 0.15s ease;
-  letter-spacing: 0.5px;
+  user-select: none;
 }
-.btn-prompt-tool:hover {
-  background: var(--border-active);
-  color: var(--color-text-bright);
-  border-color: var(--color-cyan);
+.btn-prompt-plus:hover {
+  background: rgba(6, 182, 212, 0.12);
+  color: var(--color-cyan);
 }
 
-.prompt-telemetry-status {
-  font-size: 9px;
-  color: var(--color-text-dim);
-  letter-spacing: 0.5px;
+.chip-thumb {
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 2px;
+  border: 1px solid rgba(6, 182, 212, 0.4);
 }
 
 /* Dropzone & Textarea Area */

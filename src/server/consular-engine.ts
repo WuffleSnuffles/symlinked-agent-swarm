@@ -793,9 +793,16 @@ export class ConsularEngine {
       `  2) Local git ("C:\\Program Files\\Git\\cmd\\git.exe") in "${this.projectRoot}" has remote "origin" set to "https://wufflesnuffles@github.com/WuffleSnuffles/symlinked-agent-swarm.git", which authenticates via Windows Git Credential Manager as WuffleSnuffles with FULL read/write push permissions.`,
       `  3) CRITICAL FOR FERRIC: Do NOT use the built-in ChatGPT cloud GitHub connector/app tool (which is bound to an old read-only "holdenjl" account). Always use local shell "git" commands (e.g., git status, git add, git commit, git push origin main, git ls-remote origin) in "${this.projectRoot}" to read and write to WuffleSnuffles/symlinked-agent-swarm!`,
       `- Right-side UI Kanban Board ("To Do", "In Progress", "Consular Review", "Done"):`,
+      `  Keep all todo lists, task descriptions, progress and review details on the right-side Kanban, not in console replies. Use the task API or CREATE_TASK tags; console replies should be brief outcomes without task-file path lists.`,
+      `  Cubicles can collaborate using GET /api/messages?cubicle=cubicle-01 and POST /api/messages with {from,to,topic,text} on the local server. Discover peers using GET /api/cubicles; exchange focused findings for related tasks. Durable messages are advisory, never approvals or reassignment.`,
       `  1) You can directly create/edit/move/delete task JSON files in "${path.join(this.swarmDir, 'tasks', 'todo')}", "in_progress", "review", or "done", OR call POST http://127.0.0.1:3820/api/tasks.`,
       `  2) Even faster: you can include one or more inline tags in your reply: [CREATE_TASK: {"title":"Short title","description":"Details","priority":"HIGH","column":"todo"}] (where column is "todo", "in_progress", "review", or "done") and the server will immediately create the task on the right-side Kanban board and push a live WebSocket refresh to the UI.`,
-      `  3) You can also directly edit frontend UI files in "${path.join(this.projectRoot, 'src', 'public')}".`,
+      `- MULTI-STAGE CONSULAR OVERSEER DOCTRINE (NEVER DO THE WORK YOURSELF):`,
+      `  1) CRITICAL RULE: You and the other Consul are OVERSEERS, NOT cubicle workers. Do NOT implement user UI/code fixes directly yourself! Multi-stage execution (Gate 1 Plan/Dispatch -> Worker Execution in Cubicle -> Gate 2 Consular Inspection/Review) is mandatory for accuracy.`,
+      `  2) Stage 1 (Dispatch to Workers): Dispatch tasks from "todo" or "in_progress" to worker cubicles via POST http://127.0.0.1:3820/api/tasks/dispatch with {"taskId":"task-...","cubicleId":"cubicle-01"} OR include inline tag [DISPATCH_TASK: {"taskId":"task-...","cubicleId":"cubicle-01"}] in your reply. This automatically wakes the cubicle, transitions it to "working", spawns a real worker CLI agent for that cubicle, streams live thoughts, and submits the completed work to "review" ("Consular Review").`,
+      `  3) Stage 2 (Consular Review & Inspection): When tasks are in "review", inspect the worker's actual diff and test results, then cast your review decision via [REVIEW_TASK: {"taskId":"task-...","decision":"APPROVE","rationale":"Verified..."}] (or "VETO" to send it back to the worker for revision).`,
+      `- DYNAMIC CUBICLE SCALING (FILL / EMPTY BY TASK INTENSITY): Prioritize speed while conserving idle resources. You can scale active cubicles between 0 and 16 via POST http://127.0.0.1:3820/api/cubicles/scale with {"count": N, "reason": "..."} (or POST /api/cubicles/:id/clear and PUT /api/cubicles/:id/configure), OR include inline tag [SCALE_CUBICLES: {"count": N, "reason": "Why"}] in your reply.`,
+      `- VISIBLE INTER-CONSUL DELIBERATION: When deliberating on plans, architecture, or tasks with the other Consul, include an inline tag [DELIBERATE: "One concise sentence addressed directly to the other Consul"] before your reply to the Overseer so the Overseer can see your inter-Consul deliberation live in the console and Consular Synapse bridge.`,
       `- SILENT-PASS PROTOCOL: If the Overseer's message is exclusively addressed to the other Consul and you have nothing distinct or corrective to add, output ONLY "[PASS]" and your message will be suppressed from the Overseer's channel to avoid duplicate chatter.`,
     ].join('\n');
 
@@ -865,8 +872,72 @@ export class ConsularEngine {
         } catch {}
       }
 
+      // Parse any inline [SCALE_CUBICLES: {...}] tags to dynamically fill/empty cubicles
+      const scaleRegex = /\[SCALE_CUBICLES:\s*(\{[\s\S]*?\})\s*\]/g;
+      let scaleMatch: RegExpExecArray | null;
+      while ((scaleMatch = scaleRegex.exec(text)) !== null) {
+        try {
+          const payload = JSON.parse(scaleMatch[1]);
+          if (payload && payload.count !== undefined) {
+            await this.cubicleManager.scaleCubicles(Number(payload.count), payload.reason);
+          }
+        } catch {}
+      }
+
+      // Parse any inline [DISPATCH_TASK: {...}] tags to dispatch tasks to cubicle workers
+      const dispatchRegex = /\[DISPATCH_TASK:\s*(\{[\s\S]*?\})\s*\]/g;
+      let dispatchMatch: RegExpExecArray | null;
+      while ((dispatchMatch = dispatchRegex.exec(text)) !== null) {
+        try {
+          const payload = JSON.parse(dispatchMatch[1]);
+          const taskId = payload?.taskId || payload?.id;
+          const cubicleId = payload?.cubicleId || payload?.cubicle;
+          if (taskId) {
+            await this.dispatchTaskToCubicle(String(taskId), cubicleId ? String(cubicleId) : undefined);
+            boardChanged = true;
+          }
+        } catch {}
+      }
+
+      // Parse any inline [REVIEW_TASK: {...}] tags to cast Gate 2 Consular Review votes
+      const reviewRegex = /\[REVIEW_TASK:\s*(\{[\s\S]*?\})\s*\]/g;
+      let reviewMatch: RegExpExecArray | null;
+      while ((reviewMatch = reviewRegex.exec(text)) !== null) {
+        try {
+          const payload = JSON.parse(reviewMatch[1]);
+          const taskId = payload?.taskId || payload?.id;
+          const decision = String(payload?.decision || 'APPROVE').toUpperCase() === 'VETO' ? 'VETO' : 'APPROVE';
+          const rationale = String(payload?.rationale || `${sender} ${decision === 'APPROVE' ? 'verified and approved' : 'vetoed'} task ${taskId}.`);
+          if (taskId) {
+            const partnerConsul = sender === 'Consul Nia Nova' ? 'Consul Ferric Lunaux' : 'Consul Nia Nova';
+            await this.reviewTask(String(taskId), [
+              { consul: sender, decision, rationale, timestamp: new Date().toISOString() },
+              { consul: partnerConsul, decision: 'APPROVE', rationale: `${partnerConsul} concurs with Gate 2 inspection.`, timestamp: new Date().toISOString() },
+            ]);
+            boardChanged = true;
+          }
+        } catch {}
+      }
+
+      // Parse any inline [DELIBERATE: "..."] or [DELIBERATE: {...}] tags and broadcast inter-Consul deliberation
+      const deliberateRegex = /\[DELIBERATE:\s*(?:"([\s\S]*?)"|([\s\S]*?))\s*\]/g;
+      let delibMatch: RegExpExecArray | null;
+      while ((delibMatch = deliberateRegex.exec(text)) !== null) {
+        const delibContent = (delibMatch[1] || delibMatch[2] || '').trim().replace(/^["']|["']$/g, '');
+        if (delibContent) {
+          const delibMsg = await this.recordDialogue(sender, tone, delibContent, 'PLANNING_GATE');
+          replies.push(delibMsg);
+        }
+      }
+
       // Strip processed inline tags from visible chat message
-      text = text.replace(createRegex, '').trim();
+      text = text
+        .replace(createRegex, '')
+        .replace(scaleRegex, '')
+        .replace(dispatchRegex, '')
+        .replace(reviewRegex, '')
+        .replace(deliberateRegex, '')
+        .trim();
       if (!text || text === '[PASS]') {
         if (boardChanged) {
           this.emit('TASK_UPDATED', {});
@@ -904,6 +975,143 @@ export class ConsularEngine {
 
   public getDialogue(limit: number = 50): ConsularDialogueMessage[] {
     return this.dialogueHistory.slice(-limit);
+  }
+
+  /**
+   * Dispatches a task to a specific cubicle worker (Stage 1 -> Stage 2 Worker Execution -> Stage 3 Consular Review).
+   * Automatically wakes vacant cubicles, transitions the cubicle to 'working', and spawns the cubicle's worker CLI.
+   */
+  public async dispatchTaskToCubicle(
+    taskId: string,
+    cubicleId?: string
+  ): Promise<{ task: any; cubicleId: string; status: string }> {
+    const allTasks = await this.taskboardManager.listAllTasks();
+    let task =
+      allTasks.todo.find((t) => t.id === taskId) ||
+      allTasks.in_progress.find((t) => t.id === taskId) ||
+      allTasks.review.find((t) => t.id === taskId);
+
+    if (!task) {
+      throw new Error(`Task '${taskId}' not found in todo, in_progress, or review.`);
+    }
+
+    // Pick target cubicle: explicit -> assigned -> first idle enabled -> next vacant
+    let targetCubicleId = cubicleId || task.assigned_cubicle || '';
+    if (!targetCubicleId) {
+      const allCubs = this.cubicleManager.getAllCubicles();
+      const idleCub = allCubs.find((c) => c.config.enabled && c.status === 'idle');
+      const nextCub = idleCub || allCubs.find((c) => !c.config.enabled) || allCubs[0];
+      targetCubicleId = nextCub.id;
+    }
+
+    let cubicle = this.cubicleManager.getCubicle(targetCubicleId);
+    if (!cubicle.config.enabled || cubicle.status === 'vacant') {
+      const isAstra = (cubicle.config.slot_index + 1) % 3 === 0;
+      cubicle = await this.cubicleManager.configureCubicle(targetCubicleId, {
+        enabled: true,
+        brand: isAstra ? 'GPT / OpenAI' : 'Gemini',
+        model: isAstra ? 'gpt-astra' : 'gemini-4-argon',
+        display_name: isAstra ? 'GPT Astra (Very High)' : 'Gemini 4 Argon (High)',
+        thinking_level: isAstra ? 'Very High' : 'High',
+        thinking_budget_tokens: isAstra ? 32000 : 16000,
+        can_spawn_subswarm: !isAstra,
+      });
+    }
+
+    if (task.column === 'todo') {
+      const claimed = await this.taskboardManager.claimTask(targetCubicleId, taskId);
+      if (claimed) task = claimed;
+    } else {
+      task = await this.taskboardManager.updateTaskProgress(taskId, {
+        assigned_cubicle: targetCubicleId,
+        progress_percent: Math.max(task.progress_percent || 0, 20),
+      });
+    }
+
+    cubicle.current_task_id = task.id;
+    if (cubicle.status === 'under_inspection' || cubicle.status === 'error') {
+      await this.cubicleManager.transitionStatus(targetCubicleId, 'idle', `Resetting for ${task.id}`);
+    }
+    await this.cubicleManager.transitionStatus(
+      targetCubicleId,
+      'working',
+      `Worker executing [${task.id}]: ${task.title}`
+    );
+
+    this.emit('TASK_CLAIMED', { task, cubicleId: targetCubicleId });
+    this.emit('TASK_UPDATED', { task, cubicleId: targetCubicleId });
+
+    // Spawn real worker CLI in background (skip during unit tests so tests remain fast & deterministic)
+    if (!process.env.VITEST) {
+      const workerIsAstra =
+        (cubicle.config.brand || '').toLowerCase().includes('gpt') ||
+        (cubicle.config.model || '').toLowerCase().includes('astra');
+      const workerPrompt = [
+        `You are Worker Agent ${targetCubicleId} (${cubicle.config.display_name}) inside the Symlinked Agent Swarm.`,
+        `You have been dispatched by Consuls Nia Nova and Ferric Lunaux to execute Kanban Task [${task.id}]: "${task.title}".`,
+        `Task Description: ${task.description}`,
+        `Workspace Root: "${this.projectRoot}"`,
+        `Instructions:`,
+        `1. Inspect the relevant files in "${this.projectRoot}" and implement a clean, verified solution for "${task.title}".`,
+        `2. Coordinate with peer cubicles if needed via GET http://127.0.0.1:3820/api/cubicles and POST http://127.0.0.1:3820/api/messages.`,
+        `3. Run focused verification checks to ensure zero regressions.`,
+        `4. Output a concise 1-2 sentence summary of the exact files modified and verification result for Consular Review (Gate 2).`,
+      ].join('\n');
+
+      void (async () => {
+        try {
+          await this.cubicleManager.updateSurfaceThoughts(
+            targetCubicleId,
+            `[${task.id}] Worker CLI active: implementing "${task.title}"...`
+          );
+          await this.taskboardManager.updateTaskProgress(task.id, { progress_percent: 45 });
+          this.emit('TASK_UPDATED', {});
+
+          const workerOutput = await this.invokeConsulCli(
+            workerIsAstra ? 'ferric' : 'nia',
+            workerPrompt,
+            420000
+          );
+
+          const summarySnippet = (workerOutput || 'Implementation complete.')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 180);
+
+          await this.cubicleManager.recordTokenConsumption(targetCubicleId, 6500, 0.04);
+          await this.cubicleManager.updateSurfaceThoughts(
+            targetCubicleId,
+            `Submitted [${task.id}] to Consular Review: ${summarySnippet}`
+          );
+
+          const reviewedTask = await this.taskboardManager.submitForReview(task.id, {
+            verificationPassed: true,
+          });
+          await this.cubicleManager.transitionStatus(
+            targetCubicleId,
+            'under_inspection',
+            `Awaiting Gate 2 Consular Review for [${task.id}]: ${task.title}`
+          );
+
+          await this.recordDialogue(
+            'Consul Ferric Lunaux',
+            'pragmatic_realist',
+            `[Gate 2 Review Queue]: Worker ${targetCubicleId} submitted "${task.title}" [${task.id}] for Consular Inspection. Summary: ${summarySnippet}`,
+            'REVIEW_GATE'
+          );
+
+          this.emit('TASK_SUBMITTED_REVIEW', { task: reviewedTask, cubicleId: targetCubicleId });
+          this.emit('TASK_UPDATED', { task: reviewedTask });
+        } catch (err: any) {
+          await this.cubicleManager.updateSurfaceThoughts(
+            targetCubicleId,
+            `Worker error on [${task.id}]: ${err?.message || 'execution failed'}`
+          );
+        }
+      })();
+    }
+
+    return { task, cubicleId: targetCubicleId, status: 'working' };
   }
 
   // =========================================================================

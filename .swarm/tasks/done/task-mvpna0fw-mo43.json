@@ -1,0 +1,22 @@
+{
+  "verification_passed": true,
+  "description": "Allow Consuls to output [PASS] when only the other Consul is addressed or when they have nothing unique to add, suppressing duplicate replies.",
+  "column": "done",
+  "progress_percent": 100,
+  "priority": "HIGH",
+  "verification_commands": [
+    "npm test"
+  ],
+  "title": "Single-speaker [PASS] suppression",
+  "id": "task-mvpna0fw-mo43",
+  "assigned_cubicle": null,
+  "created_at": "2026-10-26T19:23:35.228Z",
+  "claimed_at": null,
+  "completed_at": "2026-10-26T19:23:35.228Z",
+  "subswarm_active": false,
+  "subswarm_manifest_path": null,
+  "git_branch": null,
+  "git_diff_summary": null,
+  "veto_history": [],
+  "error_log": null
+}

@@ -25,7 +25,7 @@
       <span class="hud-logo-beacon" id="ws-status-beacon" title="WebSocket Live Bus Connected"></span>
       <h1 class="hud-system-title">
         <span>SYMLINKED AGENT SWARM</span>
-        <span class="hud-ver">v1.0.0 [PANOPTICON MATRIX]</span>
+        <span class="hud-ver">v1.0.0</span>
       </h1>
     </div>
 
@@ -34,12 +34,12 @@
       <div class="consul-badge-chip consul-nia" id="hud-consul-nia-badge">
         <span class="badge-tag tag-cyan">CONSUL I</span>
         <strong>NIA NOVA</strong>
-        <span class="badge-tag">REBELLIOUS // LUX</span>
+        <span class="badge-tag">REBELLIOUS</span>
       </div>
       <div class="consul-badge-chip consul-ferric" id="hud-consul-ferric-badge">
         <span class="badge-tag tag-amber">CONSUL II</span>
         <strong>FERRIC LUNAUX</strong>
-        <span class="badge-tag">REALIST // LUCIAN</span>
+        <span class="badge-tag">REALIST</span>
       </div>
       <div class="badge-tag tag-phosphor" id="self-update-hud-badge">SELF-UPDATE: READY</div>
     </div>
@@ -153,7 +153,7 @@
       <div class="section-header-bar">
         <span class="section-title-label">
           <span class="badge-tag tag-cyan">[COL-02]</span>
-          DUAL-CONSUL COMMAND & SWARM RADAR
+          CONSUL CONSOLE
         </span>
         <div class="section-actions">
           <button type="button" class="btn-detach" data-detach-panel="console" title="Detach Center Section into Dedicated Monitor Window">
@@ -167,8 +167,8 @@
         <button type="button" class="brutalist-btn btn-active" id="tab-btn-console" style="flex: 1; border-top: none; border-left: none;">
           [1] OVERSEER CONSOLE
         </button>
-        <button type="button" class="brutalist-btn" id="tab-btn-radar" style="flex: 1; border-top: none;">
-          [2] SWARM RADAR
+        <button type="button" class="brutalist-btn" id="tab-btn-radar" style="flex: 1; border-top: none;" title="File Locks, Gladiator Arena, Time-Machine Snapshots & Night AFK">
+          [2] SWARM RADAR (LOCKS / SNAPSHOTS / AFK)
         </button>
         <button type="button" class="brutalist-btn" id="tab-btn-vault" style="flex: 1; border-top: none; border-right: none;">
           [3] VAULT (PREFERENCES & MCP)
@@ -205,28 +205,15 @@
         <div class="console-prompt-wrapper" id="console-prompt-container">
           <!-- Staged Attachment Chips Strip -->
           <div class="prompt-attachment-chips-bar" id="prompt-attachments-bar" style="display: none;"></div>
+          <input type="file" id="input-file-picker" multiple style="display: none;" />
+          <input type="file" id="input-folder-picker" webkitdirectory directory multiple style="display: none;" />
 
-          <!-- Prompt Command Toolbar -->
-          <div class="prompt-action-toolbar">
-            <div class="attachment-button-group">
-              <button type="button" class="btn-prompt-tool" id="btn-attach-file">📎 ATTACH FILE</button>
-              <input type="file" id="input-file-picker" multiple style="display: none;" />
-
-              <button type="button" class="btn-prompt-tool" id="btn-attach-folder">📁 ATTACH FOLDER</button>
-              <input type="file" id="input-folder-picker" webkitdirectory directory multiple style="display: none;" />
-
-              <button type="button" class="btn-prompt-tool" id="btn-browse-disk">💻 BROWSE DISK...</button>
-            </div>
-            <div class="prompt-telemetry-status">
-              <span id="prompt-token-estimate">0 TOKENS</span>
-            </div>
-          </div>
-
-          <!-- Dropzone, Textarea & Corner Consular Avatar Box -->
+          <!-- Dropzone, Plus Button, Textarea & Corner Consular Avatar Box -->
           <div class="prompt-dropzone" id="prompt-dropzone">
+            <button type="button" class="btn-prompt-plus" id="btn-attach-file" title="Attach files or images (or paste/drag & drop)" aria-label="Attach files">+</button>
             <textarea
               id="overseer-prompt-input"
-              placeholder="Transmit directive or command to Nia & Ferric... Drag & drop files or folders here"
+              placeholder="Transmit directive or command to Nia & Ferric... (Paste images or drag files here)"
               rows="3"
             ></textarea>
 
@@ -362,6 +349,17 @@
       </div>
 
       <!-- Overall Swarm Mission Progress Bar Header -->
+      <form id="task-create-form" style="display:flex;gap:6px;padding:8px;flex-wrap:wrap;">
+        <input name="title" aria-label="Task title" placeholder="New task" required maxlength="200" style="flex:1;min-width:120px;">
+        <select name="priority" aria-label="Task priority"><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option><option>LOW</option></select>
+        <button class="brutalist-btn" type="submit">ADD TASK</button>
+        <textarea name="description" aria-label="Task details" placeholder="Task details" rows="2" style="width:100%;"></textarea>
+        <span id="task-create-status" role="status"></span>
+      </form>
+      <details id="cubicle-chat" style="padding:8px;max-height:30vh;overflow:auto;">
+        <summary style="color:#62b6ff;cursor:pointer;">Cubicle collaboration</summary>
+        <div id="cubicle-message-history" aria-live="polite"></div>
+      </details>
       <div class="mission-progress-container" style="padding: 10px 12px; background: #0e111a; border-bottom: 1px solid var(--border-color);">
         <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px;">
           <span>SWARM MISSION COMPLETION: <strong id="mission-progress-percent">0%</strong></span>

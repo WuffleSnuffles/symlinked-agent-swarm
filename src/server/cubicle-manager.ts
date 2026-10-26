@@ -46,7 +46,7 @@ export class CubicleManager {
 
   // Deterministic valid transition matrix
   private static readonly VALID_TRANSITIONS: Record<CubicleStatus, CubicleStatus[]> = {
-    vacant: ['idle'],
+    vacant: ['idle', 'working'],
     idle: ['working', 'vacant', 'error'],
     working: ['under_inspection', 'idle', 'error', 'exhausted'],
     under_inspection: ['idle', 'working', 'error'],
@@ -235,6 +235,20 @@ export class CubicleManager {
     (cubicle as any).state = CubicleManager.mapStatusToDisplayState(targetStatus);
     cubicle.last_heartbeat = new Date().toISOString();
 
+    if (currentStatus === 'vacant' && targetStatus !== 'vacant' && !cubicle.config.enabled) {
+      const isAstra = (cubicle.config.slot_index + 1) % 3 === 0;
+      cubicle.config.enabled = true;
+      cubicle.config.brand = cubicle.config.brand || (isAstra ? 'GPT / OpenAI' : 'Gemini');
+      cubicle.config.model = cubicle.config.model || (isAstra ? 'gpt-astra' : 'gemini-4-argon');
+      cubicle.config.display_name =
+        cubicle.config.display_name && !cubicle.config.display_name.startsWith('Unassigned')
+          ? cubicle.config.display_name
+          : isAstra
+          ? 'GPT Astra (Very High)'
+          : 'Gemini 4 Argon (High)';
+      await this.saveRosterFile();
+    }
+
     if (targetStatus === 'idle') {
       cubicle.current_task_id = null;
       cubicle.active_subswarm_id = null;
@@ -247,6 +261,8 @@ export class CubicleManager {
       cubicle.active_subswarm_id = null;
       cubicle.process_pid = null;
       cubicle.surface_thoughts = 'Slot vacant.';
+    } else if (reason) {
+      cubicle.surface_thoughts = reason;
     }
 
     await this.saveStatusFile(cubicle);
@@ -315,6 +331,67 @@ export class CubicleManager {
     await this.saveStatusFile(cubicle);
     this.emitStateChange(cubicle, 'CUBICLE_CLEARED');
     return cubicle;
+  }
+
+  /**
+   * Dynamically scales the number of active (enabled) cubicles between 0 and 16
+   * according to task intensity, prioritizing speed while conserving idle resources.
+   */
+  public async scaleCubicles(
+    targetCount: number,
+    reason?: string
+  ): Promise<{ activeCount: number; filled: string[]; emptied: string[] }> {
+    const clamped = Math.max(0, Math.min(16, Math.floor(Number(targetCount) || 0)));
+    const all = this.getAllCubicles();
+    const enabled = all.filter((c) => c.config.enabled);
+    const filled: string[] = [];
+    const emptied: string[] = [];
+
+    if (enabled.length > clamped) {
+      const toRemove = enabled.length - clamped;
+      // Prefer clearing idle/vacant/error slots from highest index down before touching working slots
+      const candidates = [...enabled].sort((a, b) => {
+        const aBusy = a.status === 'working' || a.status === 'under_inspection' ? 1 : 0;
+        const bBusy = b.status === 'working' || b.status === 'under_inspection' ? 1 : 0;
+        if (aBusy !== bBusy) return aBusy - bBusy;
+        return b.config.slot_index - a.config.slot_index;
+      });
+      for (const cub of candidates.slice(0, toRemove)) {
+        await this.clearCubicle(cub.id);
+        if (reason) {
+          await this.updateSurfaceThoughts(cub.id, `Emptied: ${reason}`);
+        }
+        emptied.push(cub.id);
+      }
+    } else if (enabled.length < clamped) {
+      const toAdd = clamped - enabled.length;
+      const vacant = all.filter((c) => !c.config.enabled);
+      for (const cub of vacant.slice(0, toAdd)) {
+        const isAstra = (cub.config.slot_index + 1) % 3 === 0;
+        await this.configureCubicle(cub.id, {
+          enabled: true,
+          brand: isAstra ? 'GPT / OpenAI' : 'Gemini',
+          model: isAstra ? 'gpt-astra' : 'gemini-4-argon',
+          display_name: isAstra ? 'GPT Astra (Very High)' : 'Gemini 4 Argon (High)',
+          thinking_level: isAstra ? 'Very High' : 'High',
+          thinking_budget_tokens: isAstra ? 32000 : 16000,
+          can_spawn_subswarm: !isAstra,
+          cli_template: isAstra
+            ? '"C:\\Users\\green\\AppData\\Local\\OpenAI\\Codex\\bin\\e78bad9887fa50cf\\codex.exe" exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -m gpt-6-astra -C "{{worktree_dir}}" "{{prompt}}"'
+            : '"C:\\Users\\green\\.gemini\\bin\\agy.exe" --model gemini-4-argon-high --dangerously-skip-permissions --print-timeout 0 --disable-slash-commands -w "{{worktree_dir}}" -p "{{prompt}}"',
+          api_key_env_var: isAstra ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY',
+          max_tokens: isAstra ? 1500000 : 2000000,
+          max_cost_usd: isAstra ? 30.0 : 20.0,
+        });
+        if (reason) {
+          await this.updateSurfaceThoughts(cub.id, `Filled: ${reason}`);
+        }
+        filled.push(cub.id);
+      }
+    }
+
+    const activeCount = this.getAllCubicles().filter((c) => c.config.enabled).length;
+    return { activeCount, filled, emptied };
   }
 
   /**

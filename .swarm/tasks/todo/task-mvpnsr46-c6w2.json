@@ -1,6 +1,6 @@
 {
-  "title": "Shrink cubicle display",
-  "description": "Reduce cubicle display to at most one-fifth of the screen while preserving readable text and usable controls; verify at supported viewport sizes.",
+  "title": "Remove Consular Review column",
+  "description": "Remove the review column from the board and update worker completion routing to keep tasks In Progress until verification passes, then move them to Done. Preserve existing review tasks by moving them to In Progress.",
   "priority": "HIGH",
   "column": "todo",
   "assigned_cubicle": null,
@@ -14,8 +14,8 @@
   ],
   "verification_passed": null,
   "error_log": null,
-  "id": "task-mvpn06iq-vact",
-  "created_at": "2026-10-26T19:15:56.546Z",
+  "id": "task-mvpnsr46-c6w2",
+  "created_at": "2026-10-26T19:38:09.606Z",
   "claimed_at": null,
   "completed_at": null,
   "veto_history": []

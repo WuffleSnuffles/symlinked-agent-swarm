@@ -82,11 +82,27 @@ export class CubicleGridController {
     const isWorking = c.status === 'working';
     const subswarmActive = isWorking && (c.subswarm_active || c.active_subswarm_id || canSpawn);
 
-    const fatigue = c.fatigue_percentage || 0;
+    const tokensUsed = Number(c.config?.quota?.tokens_used || 0);
+    const hasVerifiedQuota = Boolean(c.quota_verified) || tokensUsed > 0;
+    const fatigue = hasVerifiedQuota ? Number(c.fatigue_percentage ?? c.fatigue_percent ?? 0) : 0;
     let fatigueTier = 'fatigue-tier-energized';
     if (fatigue > 80) fatigueTier = 'fatigue-tier-exhausted';
     else if (fatigue > 55) fatigueTier = 'fatigue-tier-critical';
     else if (fatigue > 25) fatigueTier = 'fatigue-tier-moderate';
+
+    const quotaReadout = !c.config?.enabled
+      ? 'VACANT'
+      : hasVerifiedQuota
+      ? `${fatigue}% (${tokensUsed.toLocaleString()} TOK)`
+      : 'UNKNOWN';
+
+    const rawThoughts = c.surface_thoughts || '';
+    const displayThoughts =
+      c.assigned_task_title
+        ? `Working on: ${c.assigned_task_title}`
+        : rawThoughts === 'Initialized. Standing by for instructions.'
+          ? (c.config?.enabled ? 'Idle — awaiting task claim.' : 'Slot unassigned.')
+          : (rawThoughts || 'Idle telemetry normal.');
 
     card.innerHTML = `
       <div class="cubicle-card-header">
@@ -112,16 +128,16 @@ export class CubicleGridController {
 
       <div class="fatigue-section">
         <div class="fatigue-meter-label-row">
-          <span>FATIGUE</span>
-          <span class="fatigue-val">${fatigue}%</span>
+          <span>QUOTA FATIGUE</span>
+          <span class="fatigue-val">${quotaReadout}</span>
         </div>
         <div class="fatigue-meter-track">
           <div class="fatigue-meter-fill ${fatigueTier}" style="width: ${fatigue}%;"></div>
         </div>
       </div>
 
-      <div class="surface-thoughts-ticker" title="${c.surface_thoughts || ''}">
-        ${c.surface_thoughts || 'Idle telemetry normal.'}
+      <div class="surface-thoughts-ticker" title="${displayThoughts}">
+        ${displayThoughts}
       </div>
     `;
 
@@ -138,11 +154,64 @@ export class CubicleGridController {
   }
 
   updateCubicle(cubicle) {
-    this.cubicles.set(cubicle.id, cubicle);
+    const prev = this.cubicles.get(cubicle.id) || {};
+    const merged = {
+      ...prev,
+      ...cubicle,
+      fatigue_percentage: Math.max(Number(prev.fatigue_percentage || 0), Number(cubicle.fatigue_percentage || 0)),
+      assigned_task_title: cubicle.assigned_task_title || prev.assigned_task_title || null,
+    };
+    this.cubicles.set(cubicle.id, merged);
     const existing = document.getElementById(cubicle.id);
     if (existing) {
-      const newCard = this.createCubicleCard(cubicle);
+      const newCard = this.createCubicleCard(merged);
       existing.replaceWith(newCard);
+    }
+  }
+
+  async syncLiveTelemetry(tasksData = {}) {
+    const activeTasksByCubicle = new Map();
+    for (const col of ['in_progress', 'review', 'todo']) {
+      for (const t of tasksData[col] || []) {
+        if (t.assigned_cubicle && !activeTasksByCubicle.has(t.assigned_cubicle)) {
+          activeTasksByCubicle.set(t.assigned_cubicle, { task: t, col });
+        }
+      }
+    }
+
+    for (const [id, cub] of this.cubicles.entries()) {
+      if (!cub.config?.enabled) continue;
+      let diskState = null;
+      try {
+        const res = await fetch(`/api/media/serve?path=${encodeURIComponent(`.swarm/status/${id}.json`)}&t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          diskState = await res.json();
+        }
+      } catch {}
+
+      const taskEntry = activeTasksByCubicle.get(id);
+      const updated = {
+        ...cub,
+        ...(diskState || {}),
+        status: taskEntry?.col === 'in_progress' ? 'working' : (diskState?.status || cub.status),
+        current_task_id: taskEntry?.task?.id || diskState?.current_task_id || cub.current_task_id,
+        assigned_task_title: taskEntry?.task?.title || null,
+        surface_thoughts:
+          taskEntry?.task
+            ? `[${taskEntry.col.toUpperCase()}] ${taskEntry.task.title}`
+            : (diskState?.surface_thoughts || cub.surface_thoughts),
+        fatigue_percentage: Math.max(
+          Number(cub.fatigue_percentage || 0),
+          Number(diskState?.fatigue_percentage || 0)
+        ),
+      };
+      this.cubicles.set(id, updated);
+      const existing = document.getElementById(id);
+      if (existing) {
+        existing.replaceWith(this.createCubicleCard(updated));
+      }
     }
   }
 

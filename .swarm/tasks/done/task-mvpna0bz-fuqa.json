@@ -1,0 +1,24 @@
+{
+    "priority":  "HIGH",
+    "title":  "Cubicle cross-communication (OpenRig style)",
+    "description":  "Allow cubicles working on closely related tasks to exchange context, durable topic messages, and builder-to-checker handoffs inspired by OpenRig.",
+    "column":  "done",
+    "verification_commands":  [
+                                  "npm test"
+                              ],
+    "id":  "task-mvpna0bz-fuqa",
+    "assigned_cubicle":  null,
+    "created_at":  "2026-10-26T19:23:35.087Z",
+    "claimed_at":  null,
+    "completed_at":  "2026-10-26T19:34:22.9087104Z",
+    "progress_percent":  100,
+    "subswarm_active":  false,
+    "subswarm_manifest_path":  null,
+    "git_branch":  null,
+    "git_diff_summary":  null,
+    "verification_passed":  true,
+    "veto_history":  [
+
+                     ],
+    "error_log":  null
+}

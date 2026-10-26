@@ -1,0 +1,24 @@
+{
+    "title":  "Dynamic cubicle autoscaling (fill/empty by load)",
+    "description":  "Scale active cubicles between 0 and 16 via POST /api/cubicles/scale and [SCALE_CUBICLES] Consul tags according to task intensity, prioritizing parallel speed on heavy batches and emptying idle slots to conserve resources.",
+    "priority":  "HIGH",
+    "column":  "todo",
+    "assigned_cubicle":  null,
+    "progress_percent":  0,
+    "subswarm_active":  false,
+    "subswarm_manifest_path":  null,
+    "git_branch":  "swarm/cubicle-03",
+    "git_diff_summary":  null,
+    "verification_commands":  [
+                                  "npm test"
+                              ],
+    "verification_passed":  null,
+    "error_log":  null,
+    "id":  "task-mvpnj8dt-hvye",
+    "created_at":  "2026-10-26T19:30:45.425Z",
+    "claimed_at":  null,
+    "completed_at":  null,
+    "veto_history":  [
+
+                     ]
+}

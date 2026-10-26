@@ -8,6 +8,7 @@
 import { getPromptAttachments } from './prompt-attachment.js';
 import { getMediaRenderer } from './media-renderer.js';
 import { getConsularAvatars } from './consular-avatars.js';
+import { renderConsoleText } from './console-links.js';
 
 export class OverseerConsoleController {
   constructor(app) {
@@ -142,6 +143,13 @@ export class OverseerConsoleController {
       senderStr === 'User' ||
       msg.tone === 'user_directive';
     const isNia = !isUser && (senderStr.includes('Nia') || senderStr === 'Consul I');
+    const isDeliberation =
+      !isUser &&
+      (msg.phase === 'PLANNING_GATE' ||
+        msg.phase === 'REVIEW_GATE' ||
+        msg.phase === 'DISCIPLINE' ||
+        msg.phase === 'DELIBERATION' ||
+        /^\[(DELIBERATE|TO FERRIC|TO NIA|INTERCESSIO|IMPATIENCE)/i.test(String(msg.content || '').trim()));
 
     // If a persisted user message arrives, remove any temporary optimistic user bubble for the same text
     if (isUser && !msg._optimistic) {
@@ -150,9 +158,13 @@ export class OverseerConsoleController {
     }
 
     let senderColor = 'var(--color-amber)';
-    let senderName = 'CONSUL II // FERRIC LUNAUX [GPT ASTRA]';
-    let alignStyle = 'border-left: 3px solid var(--color-amber);';
-    let bgStyle = '#0f121b';
+    let senderName = isDeliberation
+      ? '⚖ FERRIC → NIA // CONSULAR DELIBERATION'
+      : 'CONSUL II // FERRIC LUNAUX [GPT ASTRA]';
+    let alignStyle = isDeliberation
+      ? 'border-left: 3px dashed var(--color-amber); margin-left: 14px;'
+      : 'border-left: 3px solid var(--color-amber);';
+    let bgStyle = isDeliberation ? '#14111d' : '#0f121b';
 
     if (isUser) {
       senderColor = 'var(--color-phosphor)';
@@ -161,23 +173,36 @@ export class OverseerConsoleController {
       bgStyle = '#0b1612';
     } else if (isNia) {
       senderColor = 'var(--color-cyan)';
-      senderName = 'CONSUL I // NIA NOVA [GEMINI 4 ARGON]';
-      alignStyle = 'border-left: 3px solid var(--color-cyan);';
+      senderName = isDeliberation
+        ? '⚡ NIA → FERRIC // CONSULAR DELIBERATION'
+        : 'CONSUL I // NIA NOVA [GEMINI 4 ARGON]';
+      alignStyle = isDeliberation
+        ? 'border-left: 3px dashed var(--color-cyan); margin-left: 14px;'
+        : 'border-left: 3px solid var(--color-cyan);';
+    }
+
+    // Also update the Consular Synapse header readout when a deliberation message arrives
+    if (isDeliberation) {
+      const synapseLabel = document.querySelector('.sauron-bridge-synapse .synapse-label');
+      if (synapseLabel) {
+        const snippet = String(msg.content || '').replace(/\s+/g, ' ').slice(0, 68);
+        synapseLabel.textContent = `${isNia ? 'NIA→FERRIC' : 'FERRIC→NIA'}: ${snippet}`;
+        synapseLabel.title = String(msg.content || '');
+      }
     }
 
     const row = document.createElement('div');
     row.className = `dialogue-message-bubble${msg._optimistic ? ' optimistic-user-bubble' : ''}`;
     row.style.cssText = `background: ${bgStyle}; border: 1px solid var(--border-color); ${alignStyle} padding: 8px 10px; margin-bottom: 6px; font-size: 11px;`;
 
-    const formattedContent = this.escapeHtml(msg.content).replace(/\n/g, '<br/>');
-
     row.innerHTML = `
       <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
         <span style="font-weight: 700; color: ${senderColor};">${senderName}</span>
         <span style="font-size: 9px; color: var(--color-text-dim);">${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}</span>
       </div>
-      <div style="color: var(--color-text-bright); line-height: 1.45;">${formattedContent}</div>
+      <div class="dialogue-content" style="color: var(--color-text-bright); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;"></div>
     `;
+    renderConsoleText(row.querySelector('.dialogue-content'), msg.content);
 
     // If message includes multimodal attachments
     if (msg.attachments && Array.isArray(msg.attachments)) {

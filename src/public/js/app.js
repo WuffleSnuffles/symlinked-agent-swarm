@@ -9,6 +9,7 @@
  */
 
 import { initTwinSauron } from './twin-sauron-canvas.js';
+import { initConsoleResize } from './console-resize.js';
 import { initConsularAvatars } from './consular-avatars.js';
 import { initPromptAttachments } from './prompt-attachment.js';
 import { initMediaRenderer } from './media-renderer.js';
@@ -41,6 +42,7 @@ export class PanopticonApp {
   async initialize() {
     this.applyPanelRoute();
     this.initHUDControls();
+    initConsoleResize();
 
     // Initialize subsystems
     this.sauron = initTwinSauron();
@@ -187,6 +189,7 @@ export class PanopticonApp {
   }
 
   dispatchServerEvent(type, payload) {
+    if (type === 'CUBICLE_MESSAGE') this.taskboardController?.refreshMessages();
     // 1. Sauron Beam Targeting
     if (type === 'SAURON_FOCUS_TARGET') {
       this.sauron?.setMode(payload.twin_sauron_mode, payload.target_cubicle);
@@ -282,6 +285,7 @@ export class PanopticonApp {
         const data = await res.json();
         updateTasks(data.tasks);
         updateMissionProgress(data.progress);
+        await this.cubicleGrid?.syncLiveTelemetry?.(data.tasks);
       }
     } catch {}
   }

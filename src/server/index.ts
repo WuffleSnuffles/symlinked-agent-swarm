@@ -19,6 +19,7 @@ import { ConsularEngine } from './consular-engine.js';
 import { PreferenceEngine } from './preference-engine.js';
 import { SkillMcpManager } from './mcp-generator.js';
 import { CourierGateway } from './courier-gateway.js';
+import { createCubicleMessageRouter } from './cubicle-messages.js';
 import { createGovernanceRouter } from './routes/governance-routes.js';
 import { createMediaRouter } from './routes/media-routes.js';
 import { createFilesystemRouter } from './routes/filesystem-routes.js';
@@ -151,6 +152,7 @@ export async function createSwarmServer(
   app.use('/api', createGovernanceRouter(consularEngine, preferenceEngine, skillMcpManager, courierGateway));
   app.use('/api', createMediaRouter(repoRoot));
   app.use('/api', createFilesystemRouter(repoRoot));
+  app.use('/api', createCubicleMessageRouter(path.join(swarmDir, 'messages'), cubicleManager, broadcast));
 
   // SPA Fallback for Panopticon SPA (including ?panel=cubicles, ?panel=console, ?panel=taskboard)
   app.get('/', (_req: Request, res: Response) => {
@@ -234,6 +236,17 @@ export async function createSwarmServer(
     }
   });
 
+  app.post('/api/cubicles/scale', async (req: Request, res: Response) => {
+    try {
+      const count = Number(req.body?.count ?? req.body?.targetCount ?? 0);
+      const reason = req.body?.reason ? String(req.body.reason) : undefined;
+      const result = await cubicleManager.scaleCubicles(count, reason);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // Taskboard Routes
   app.get('/api/tasks', async (_req: Request, res: Response) => {
     try {
@@ -276,11 +289,34 @@ export async function createSwarmServer(
         res.status(404).json({ message: 'No available tasks to claim or race lost' });
         return;
       }
-      await cubicleManager.transitionStatus(cubicleId, 'working', `Claimed task ${task.id}`);
+      const claimedCubicle = cubicleManager.getCubicle(cubicleId);
+      claimedCubicle.current_task_id = task.id;
+      await cubicleManager.transitionStatus(
+        cubicleId,
+        'working',
+        `Active [${task.id}]: ${task.title}`
+      );
       broadcast('TASK_CLAIMED', { task, cubicleId });
       res.json({ task });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/tasks/dispatch', async (req: Request, res: Response) => {
+    try {
+      const { taskId, cubicleId } = req.body || {};
+      if (!taskId) {
+        res.status(400).json({ error: 'taskId is required to dispatch a task to a worker cubicle' });
+        return;
+      }
+      const dispatched = await consularEngine.dispatchTaskToCubicle(
+        String(taskId),
+        cubicleId ? String(cubicleId) : undefined
+      );
+      res.json(dispatched);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
     }
   });
 
