@@ -1,0 +1,23 @@
+# Progress — Worker M2-2 (Milestone 2 Remediation & Scope Integration)
+Last visited: 2026-10-26T02:00:00Z
+- [x] Initialized DISPATCH.md and BRIEFING.md
+- [x] Read reviewer_m2_1/handoff.md & reviewer_m2_2/handoff.md, ORIGINAL_REQUEST.md, PROJECT.md
+- [x] Remediated src/server/types/governance.ts (CourierPetition schema alignment with PROJECT.md § 7, ConsularQuestion types)
+- [x] Remediated src/server/preference-engine.ts (safe backup rotation with JSON check and collision-free UUID temp files)
+- [x] Remediated src/server/consular-engine.ts:
+  - [x] Distinct voter validation in evaluateConsensus (Nia vs Ferric)
+  - [x] Path traversal resolution in verifyPathAccess
+  - [x] Gate 1 taskboard dispatch on DISPATCH_AUTHORIZED
+  - [x] Robust .old.exe rotation in reviewSelfUpdate
+  - [x] Consular Question/Answer handling (createQuestion, answerQuestion, memory update)
+  - [x] Merge-Conflict Shield (.swarm/locks/): acquireLock, releaseLock, listLocks
+  - [x] Gladiator Tournament Mode: evaluateGladiatorContest
+  - [x] Infinite-Loop Circuit Breaker & Failover: failoverTask
+  - [x] Git Time-Machine Checkpoints (.swarm/checkpoints/): createCheckpoint, listCheckpoints, rollbackCheckpoint
+  - [x] Inter-Cubicle Shared Contracts (.swarm/contracts/): registerContract, listContracts, getContract
+  - [x] Night-Shift / AFK Mode & Digest: setAfkMode, generateBriefingDigest
+- [x] Updated src/server/cubicle-manager.ts (ports 4101-4116 for cubicles 01-16, recordError, circuit breaker, failoverTask)
+- [x] Remediated src/server/courier-gateway.ts (genuine ConsularEngine wisdom & power execution, eliminate mock facade, contract alignment, reviewPetition, physical artifact delivery to outbox/)
+- [x] Mounted endpoints in src/server/routes/governance-routes.ts and src/server/index.ts (wiring preferenceEngine to consularEngine)
+- [x] Updated test/unit/courier-gateway.test.ts, test/unit/consular-disciplinary.test.ts, and test/e2e/helpers.ts
+- [x] Wrote handoff.md and reported completion

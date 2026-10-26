@@ -1,0 +1,26 @@
+--- src/server/consular-engine.ts.orig
++++ src/server/consular-engine.ts
+@@ -1161,4 +1161,12 @@
+     await fs.writeFile(filePath, JSON.stringify(request, null, 2), 'utf8');
+ 
++    // Ensure staged binary exists prior to atomic swap
++    const newExe = path.join(this.projectRoot, 'SymlinkedAgentSwarm.new.exe');
++    if (!existsSync(newExe)) {
++      const distExe = path.join(this.projectRoot, 'dist', 'SymlinkedAgentSwarm.exe');
++      if (existsSync(distExe)) {
++        await fs.copyFile(distExe, newExe);
++      }
++    }
++
+     // 3. Execute Atomic Swap via SelfUpdateManager
+     const swapResult = await this.selfUpdateManager.executeAtomicSwap(request.version_before);
+@@ -1166,4 +1174,5 @@
+     request.version_after = swapResult.version_after;
++    request.old_exe_path = swapResult.oldExePath;
+     request.status = 'SWAP_COMPLETED';
+     request.completed_at = new Date().toISOString();
+@@ -1193,4 +1202,4 @@
+     // Rollback binary swap
+-    const oldExe = path.join(this.projectRoot, 'SymlinkedAgentSwarm.old.exe');
++    const oldExe = request.old_exe_path || path.join(this.projectRoot, 'SymlinkedAgentSwarm.old.exe');
+     await this.selfUpdateManager.rollbackSwap(oldExe);

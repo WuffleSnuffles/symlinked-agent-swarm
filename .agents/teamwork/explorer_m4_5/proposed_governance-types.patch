@@ -1,0 +1,8 @@
+--- src/server/types/governance.ts.orig
++++ src/server/types/governance.ts
+@@ -132,4 +132,5 @@
+   version_after?: string;
+   checkpoint_id?: string;
++  old_exe_path?: string;
+   votes?: [ConsularVote, ConsularVote];
+   error?: string;

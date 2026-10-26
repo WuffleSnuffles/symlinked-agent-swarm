@@ -1,0 +1,56 @@
+--- src/server/self-update-manager.ts.orig
++++ src/server/self-update-manager.ts
+@@ -76,14 +76,4 @@
+     const headerStr = headerBuf.toString('utf8');
+ 
+-    // Test Sandbox Mock Format Compatibility
+-    if (
+-      headerStr.startsWith('MZ_MOCK_') ||
+-      headerStr.startsWith('COMPILED_') ||
+-      headerStr.startsWith('STAGED_') ||
+-      headerStr.startsWith('RUNNING_')
+-    ) {
+-      return { valid: true, fileSize: stat.size, sha256 };
+-    }
+-
+     // Real Win32 PE validation
+     // 1. DOS header signature (0x4D, 0x5A) -> "MZ"
+@@ -128,6 +118,2 @@
+     const newExe = path.join(this.projectRoot, this.newExeName);
+ 
+-    // If newExe does not exist in testing mode, generate a mock PE binary
+-    if (!existsSync(newExe)) {
+-      await fs.writeFile(newExe, 'MZ_MOCK_WIN_PE_BINARY_V2_' + Date.now(), 'utf8');
+-    }
+-
+     // 1. Validate staged binary
+@@ -206,4 +192,8 @@
+     });
++    child.on('error', (err: Error) => {
++      console.error(`[SelfUpdateManager] Detached child process spawn error (${rootExe}):`, err);
++    });
+     child.unref();
+     return child;
+   }
+@@ -216,4 +206,8 @@
+   public async rollbackSwap(oldExePath: string): Promise<void> {
++    if (!existsSync(oldExePath)) {
++      throw new Error(`Rollback aborted: Backup binary not found at ${oldExePath}`);
++    }
++
+     const rootExe = path.join(this.projectRoot, this.rootExeName);
+     const failedExe = path.join(this.projectRoot, `SymlinkedAgentSwarm.failed.${Date.now()}.exe`);
+ 
+@@ -223,4 +217,11 @@
+     }
+ 
+-    if (existsSync(oldExePath)) {
++    try {
+       await fs.rename(oldExePath, rootExe);
++    } catch (err: any) {
++      if (existsSync(failedExe) && !existsSync(rootExe)) {
++        await fs.rename(failedExe, rootExe).catch(() => {});
++      }
++      throw new Error(`Rollback failed to restore ${oldExePath} to ${rootExe}: ${err.message}`);
+     }
+   }

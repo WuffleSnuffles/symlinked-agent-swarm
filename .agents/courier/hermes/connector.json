@@ -1,0 +1,14 @@
+{
+  "agent": "hermes",
+  "name": "Hermes Messenger Agent Bridge",
+  "gateway_url": "http://localhost:3820/api/courier",
+  "protocol": "HTTP_REST_AND_FILE_DROP",
+  "capabilities": [
+    "petition_submit",
+    "consular_wisdom",
+    "swarm_task_execution",
+    "sealed_deliverable"
+  ],
+  "consular_oversight": "Consul I & Consul II (Roman Republic Dual-Consuls)",
+  "file_drop_dir": ".swarm/courier/inbox"
+}

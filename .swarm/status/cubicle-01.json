@@ -1,0 +1,39 @@
+{
+  "id": "cubicle-01",
+  "config": {
+    "id": "cubicle-01",
+    "slot_index": 0,
+    "row": 0,
+    "col": 0,
+    "enabled": true,
+    "brand": "Gemini",
+    "model": "gemini-4-argon",
+    "display_name": "Gemini 4 Argon (High)",
+    "thinking_level": "High",
+    "thinking_budget_tokens": 16000,
+    "can_spawn_subswarm": true,
+    "cli_template": "gemini run --model {{model}} --thinking-budget {{thinking_budget}} --input-file \"{{prompt_file}}\" --dir \"{{worktree_dir}}\"",
+    "api_key_env_var": "GEMINI_API_KEY",
+    "quota": {
+      "max_tokens": 2000000,
+      "tokens_used": 0,
+      "max_cost_usd": 20,
+      "cost_usd_accumulated": 0
+    },
+    "port": 4101
+  },
+  "status": "idle",
+  "state": "Relaxed/Idle",
+  "current_task_id": null,
+  "active_subswarm_id": null,
+  "surface_thoughts": "Initialized. Standing by for instructions.",
+  "stamina_percentage": 100,
+  "fatigue_percentage": 0,
+  "stamina_tier": "energized",
+  "last_heartbeat": "2026-10-26T08:59:12.395Z",
+  "worktree_path": "H:\\My Drive\\Gemini Antigravity\\scratch\\symlinked_agent_swarm\\worktrees\\cubicle-01",
+  "branch_name": "swarm/cubicle-01",
+  "process_pid": null,
+  "port": 4101,
+  "error_details": null
+}

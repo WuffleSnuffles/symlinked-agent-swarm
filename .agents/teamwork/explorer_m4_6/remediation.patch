@@ -1,0 +1,194 @@
+--- a/src/server/cli-dispatcher.ts
++++ b/src/server/cli-dispatcher.ts
+@@ -84,4 +84,10 @@
+   if (first === 'status' || (first === 'grid' && args[1]?.toLowerCase() === 'status')) {
+     result.command = 'status';
++    const startIndex = first === 'status' ? 1 : 2;
++    for (let i = startIndex; i < args.length; i++) {
++      if ((args[i] === '--workspace' || args[i] === '-w') && args[i + 1]) {
++        result.workspace = path.resolve(args[++i]);
++      }
++    }
+     return result;
+   }
+@@ -93,4 +99,8 @@
+         if (args[i] === '--agent' && args[i + 1]) {
+           result.agent = args[++i];
+         } else if (args[i] === '--type' && args[i + 1]) {
+           result.requestedType = args[++i].toUpperCase() as any;
++        } else if ((args[i] === '--prompt' || args[i] === '-p') && args[i + 1]) {
++          result.prompt = args[++i];
++        } else if ((args[i] === '--workspace' || args[i] === '-w') && args[i + 1]) {
++          result.workspace = path.resolve(args[++i]);
+         } else if (!result.prompt && !args[i].startsWith('--')) {
+           result.prompt = args[i];
+         }
+@@ -183,34 +193,84 @@
+     case 'status': {
+-      const cubiclesFile = path.join(swarmDir, 'status', 'cubicles.json');
+-      if (fs.existsSync(cubiclesFile)) {
++      const rosterFile = path.join(swarmDir, 'roster.json');
++      const cubiclesFile = path.join(swarmDir, 'status', 'cubicles.json');
++      let list: any[] = [];
++
++      if (fs.existsSync(rosterFile)) {
+         try {
+-          const raw = fs.readFileSync(cubiclesFile, 'utf8');
+-          const list = JSON.parse(raw);
+-          log('\n========================================================================================');
+-          log(' PANOPTICON 16-CUBICLE SURVEILLANCE ROSTER MATRIX                                       ');
+-          log('========================================================================================');
+-          log('ID         | ASSIGNED | MODEL                         | TIER      | STATE            | FATIGUE');
+-          log('-----------+----------+-------------------------------+-----------+------------------+--------');
+-          for (const c of list) {
+-            const id = (c.id || '').padEnd(10);
+-            const assigned = (c.assigned ? 'YES' : 'NO').padEnd(8);
+-            const model = (c.model || 'unassigned').padEnd(29);
+-            const tier = (c.thinking_tier || 'Low').padEnd(9);
+-            const state = (c.state || 'Relaxed/Idle').padEnd(16);
+-            const fatigue = `${c.fatigue_percent || 0}%`.padStart(6);
+-            log(`${id} | ${assigned} | ${model} | ${tier} | ${state} | ${fatigue}`);
+-          }
+-          log('========================================================================================\n');
+-          if (exitOnComplete) process.exit(0);
+-          return { handled: true, exitCode: 0, output: logs, data: list };
++          const raw = fs.readFileSync(rosterFile, 'utf8');
++          const roster = JSON.parse(raw);
++          list = roster.map((cfg: any) => {
++            const statusFile = path.join(swarmDir, 'status', `${cfg.id}.json`);
++            let status = cfg.enabled ? 'idle' : 'vacant';
++            let fatigue = 0;
++            if (fs.existsSync(statusFile)) {
++              try {
++                const s = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
++                status = s.status || status;
++                fatigue = s.fatigue_percentage ?? s.fatigue_percent ?? 0;
++              } catch {}
++            }
++            return {
++              id: cfg.id,
++              slot_index: cfg.slot_index,
++              assigned: cfg.enabled,
++              model: cfg.model || 'unassigned',
++              tier: cfg.thinking_level || 'Low',
++              thinking_tier: cfg.thinking_level || 'Low',
++              state: status,
++              status: status,
++              fatigue_percent: fatigue,
++              fatigue_percentage: fatigue,
++            };
++          });
+         } catch (err: any) {
+-          errLog(`Failed to parse cubicles.json: ${err.message}`);
++          errLog(`Failed to parse roster.json: ${err.message}`);
+           if (exitOnComplete) process.exit(1);
+           return { handled: true, exitCode: 1, output: logs };
+         }
++      } else if (fs.existsSync(cubiclesFile)) {
++        try {
++          const raw = fs.readFileSync(cubiclesFile, 'utf8');
++          const parsed = JSON.parse(raw);
++          list = parsed.map((c: any) => ({
++            id: c.id,
++            slot_index: c.slot_index ?? c.config?.slot_index,
++            assigned: c.assigned ?? c.config?.enabled ?? false,
++            model: c.model ?? c.config?.model ?? 'unassigned',
++            tier: c.thinking_tier ?? c.tier ?? c.config?.thinking_level ?? 'Low',
++            thinking_tier: c.thinking_tier ?? c.tier ?? c.config?.thinking_level ?? 'Low',
++            state: c.state ?? c.status ?? (c.assigned ? 'idle' : 'vacant'),
++            status: c.status ?? c.state ?? (c.assigned ? 'idle' : 'vacant'),
++            fatigue_percent: c.fatigue_percent ?? c.fatigue_percentage ?? 0,
++            fatigue_percentage: c.fatigue_percentage ?? c.fatigue_percent ?? 0,
++          }));
++        } catch (err: any) {
++          errLog(`Failed to parse cubicles.json: ${err.message}`);
++          if (exitOnComplete) process.exit(1);
++          return { handled: true, exitCode: 1, output: logs };
++        }
+       } else {
+-        log('[PANOPTICON] Swarm is offline or uninitialized (.swarm/status/cubicles.json not found).');
++        try {
++          const statusDir = path.join(swarmDir, 'status');
++          if (fs.existsSync(statusDir)) {
++            const statusFiles = fs.readdirSync(statusDir).filter((f) => f.startsWith('cubicle-') && f.endsWith('.json'));
++            if (statusFiles.length > 0) {
++              const cm = new CubicleManager(swarmDir);
++              await cm.initialize();
++              list = cm.getAllCubicles().map((c) => ({
++                id: c.id,
++                slot_index: c.config.slot_index,
++                assigned: c.config.enabled,
++                model: c.config.model || 'unassigned',
++                tier: c.config.thinking_level || 'Low',
++                thinking_tier: c.config.thinking_level || 'Low',
++                state: c.status,
++                status: c.status,
++                fatigue_percent: c.fatigue_percentage,
++                fatigue_percentage: c.fatigue_percentage,
++              }));
++            }
++          }
++        } catch {}
++      }
++
++      if (list.length > 0) {
++        log('\n========================================================================================');
++        log(' PANOPTICON 4x4 CUBICLE SURVEILLANCE ROSTER MATRIX                                      ');
++        log('========================================================================================');
++        // Render 4x4 spatial matrix grid
++        for (let row = 0; row < 4; row++) {
++          const rowItems = list.slice(row * 4, row * 4 + 4);
++          if (rowItems.length > 0) {
++            const rowStr = rowItems
++              .map((c) => `[${c.id}: ${c.state || c.status || 'vacant'}]`.padEnd(21))
++              .join(' ');
++            log(rowStr);
++          }
++        }
++        log('----------------------------------------------------------------------------------------');
++        log('ID         | ASSIGNED | MODEL                         | TIER      | STATE            | FATIGUE');
++        log('-----------+----------+-------------------------------+-----------+------------------+--------');
++        for (const c of list) {
++          const id = (c.id || '').padEnd(10);
++          const assigned = ((c.assigned || c.config?.enabled) ? 'YES' : 'NO').padEnd(8);
++          const model = (c.model || c.config?.model || 'unassigned').padEnd(29);
++          const tier = (c.tier || c.thinking_tier || c.config?.thinking_level || 'Low').padEnd(9);
++          const state = (c.state || c.status || 'Relaxed/Idle').padEnd(16);
++          const fatigue = `${c.fatigue_percent ?? c.fatigue_percentage ?? 0}%`.padStart(6);
++          log(`${id} | ${assigned} | ${model} | ${tier} | ${state} | ${fatigue}`);
++        }
++        log('========================================================================================\n');
++        if (exitOnComplete) process.exit(0);
++        return { handled: true, exitCode: 0, output: logs, data: list };
++      } else {
++        log('[PANOPTICON] Swarm is offline or uninitialized (.swarm/roster.json not found).');
+         if (exitOnComplete) process.exit(0);
+         return { handled: true, exitCode: 0, output: logs };
+       }
+     }
+@@ -277,4 +337,10 @@
+     case 'courier_submit': {
++      if (!parsed.prompt || !parsed.prompt.trim()) {
++        errLog('Error: task prompt is required. Usage: SymlinkedAgentSwarm.exe courier submit --agent <name> "<task>"');
++        if (exitOnComplete) process.exit(1);
++        return { handled: true, exitCode: 1, output: logs };
++      }
+       const agent = parsed.agent || 'openclaw';
+-      const prompt = parsed.prompt || 'Autonomous petition task';
++      const prompt = parsed.prompt.trim();
+       const requestedType = parsed.requestedType || 'BOTH';
+
+--- a/src/server/index.ts
++++ b/src/server/index.ts
+@@ -171,4 +171,9 @@
+   // Health check
+   app.get('/api/health', (_req: Request, res: Response) => {
+     const allCubicles = cubicleManager.getAllCubicles();
+-    const activeCubicles = allCubicles.filter((c) => c.assigned && c.state !== 'Error').length;
++    const activeCubicles = allCubicles.filter(
++      (c: any) =>
++        (c.config?.enabled ?? c.assigned ?? false) &&
++        c.status !== 'error' &&
++        c.status !== 'vacant' &&
++        c.state !== 'Error'
++    ).length;

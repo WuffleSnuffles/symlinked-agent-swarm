@@ -1,0 +1,10 @@
+{
+  "consul": "Consul Ferric Lunaux",
+  "reliability_score": 0.98,
+  "cubicle_performance": {},
+  "efficiency_heuristics": [
+    "Favor zero-copy junctions",
+    "Require strict boundary tests"
+  ],
+  "last_growth": "2026-10-26T08:32:41.898Z"
+}

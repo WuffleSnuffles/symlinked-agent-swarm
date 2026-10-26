@@ -1,0 +1,242 @@
+/**
+ * src/public/css/brutalist-theme.css
+ *
+ * Brutalist Dystopian Cyberpunk Panopticon Theme & Design Tokens.
+ * Features: Obsidian/Crimson/Amber/Phosphor color palette, 0px sharp borders,
+ * monospace typography, scanline HUD overlay, and industrial cybernetic telemetry.
+ */
+
+:root {
+  /* Obsidian and Industrial Surfaces */
+  --bg-primary: #0a0b0e;
+  --bg-secondary: #111318;
+  --bg-card: #161922;
+  --bg-elevated: #1f2430;
+  --bg-panel: #0d0f14;
+
+  /* Sharp Zero-Radius Brutalist Borders */
+  --border-sharp: 0px;
+  --border-color: #272d3d;
+  --border-active: #3b455c;
+  --border-highlight: #4a5568;
+
+  /* High-Contrast Surveillance Accents */
+  --color-crimson: #ef4444;
+  --color-crimson-glow: rgba(239, 68, 68, 0.4);
+  --color-crimson-dark: #7f1d1d;
+  --color-amber: #f59e0b;
+  --color-amber-glow: rgba(245, 158, 11, 0.4);
+  --color-phosphor: #10b981;
+  --color-phosphor-glow: rgba(16, 185, 129, 0.4);
+  --color-cyan: #06b6d4;
+  --color-cyan-glow: rgba(6, 182, 212, 0.4);
+  --color-purple: #a855f7;
+
+  /* Text & Telemetry Contrast */
+  --color-text-dim: #94a3b8;
+  --color-text-normal: #cbd5e1;
+  --color-text-bright: #f8fafc;
+  --color-text-accent: #38bdf8;
+
+  /* Strict Monospace Typography */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Enforce Zero-Radius Sharp Geometry Globally */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--border-sharp) !important;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+  color: var(--color-text-bright);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.4;
+  user-select: text;
+}
+
+/* Industrial Monospace Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-color);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-active);
+  border: 1px solid var(--border-color);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-amber);
+}
+
+/* CRT Scanline HUD Layer */
+.scanlines-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.28) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.03),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 3px, 6px 100%;
+  opacity: 0.85;
+}
+.scanlines-overlay.hidden {
+  display: none !important;
+}
+
+/* Brutalist HUD Header Bar */
+#panopticon-hud-header {
+  height: 40px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  position: relative;
+  z-index: 50;
+}
+
+.hud-title-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hud-logo-beacon {
+  width: 10px;
+  height: 10px;
+  background: var(--color-phosphor);
+  box-shadow: 0 0 8px var(--color-phosphor-glow);
+  display: inline-block;
+  animation: pulse-beacon 2s infinite ease-in-out;
+}
+.hud-logo-beacon.offline {
+  background: var(--color-crimson);
+  box-shadow: 0 0 8px var(--color-crimson-glow);
+}
+
+@keyframes pulse-beacon {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.hud-system-title {
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--color-text-bright);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hud-ver {
+  color: var(--color-amber);
+  font-size: 11px;
+}
+
+.hud-consul-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.consul-badge-chip {
+  padding: 3px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.consul-badge-chip.consul-nia {
+  border-left: 3px solid var(--color-cyan);
+}
+.consul-badge-chip.consul-ferric {
+  border-left: 3px solid var(--color-amber);
+}
+
+.hud-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Brutalist Buttons & Selectors */
+.brutalist-btn {
+  background: var(--bg-card);
+  color: var(--color-text-bright);
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.brutalist-btn:hover {
+  background: var(--border-active);
+  border-color: var(--color-text-dim);
+}
+.brutalist-btn.btn-active, .brutalist-btn:active {
+  background: var(--color-amber);
+  color: #000;
+  border-color: var(--color-amber);
+}
+
+.brutalist-select {
+  background: var(--bg-card);
+  color: var(--color-text-bright);
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.brutalist-select:focus {
+  outline: none;
+  border-color: var(--color-cyan);
+}
+
+/* Utility Badges */
+.badge-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: #1e2230;
+  border: 1px solid #333a4d;
+  color: var(--color-text-dim);
+}
+.badge-tag.tag-amber { border-color: var(--color-amber); color: var(--color-amber); }
+.badge-tag.tag-crimson { border-color: var(--color-crimson); color: var(--color-crimson); }
+.badge-tag.tag-phosphor { border-color: var(--color-phosphor); color: var(--color-phosphor); }
+.badge-tag.tag-cyan { border-color: var(--color-cyan); color: var(--color-cyan); }

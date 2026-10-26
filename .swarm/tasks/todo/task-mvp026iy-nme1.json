@@ -1,0 +1,20 @@
+{
+  "title": "[SPLIT] Frontend styling overhaul",
+  "description": "Child subtask split from task-mvp0264r-xb4s mid-work.",
+  "assigned_cubicle": null,
+  "priority": "high",
+  "column": "todo",
+  "id": "task-mvp026iy-nme1",
+  "created_at": "2026-10-26T08:33:38.698Z",
+  "claimed_at": null,
+  "completed_at": null,
+  "progress_percent": 0,
+  "subswarm_active": false,
+  "subswarm_manifest_path": null,
+  "git_branch": null,
+  "git_diff_summary": null,
+  "verification_commands": [],
+  "verification_passed": null,
+  "veto_history": [],
+  "error_log": null
+}

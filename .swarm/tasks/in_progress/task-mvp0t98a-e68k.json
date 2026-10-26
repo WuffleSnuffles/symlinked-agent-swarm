@@ -1,0 +1,21 @@
+{
+  "title": "Initial Test Implementation",
+  "description": "Updated instructions: optimize loop algorithm and add caching.",
+  "priority": "high",
+  "assigned_cubicle": "cubicle-02",
+  "id": "task-mvp0t98a-e68k",
+  "column": "in_progress",
+  "created_at": "2026-10-26T08:54:41.914Z",
+  "claimed_at": "2026-10-26T08:54:42.255Z",
+  "completed_at": null,
+  "progress_percent": 0,
+  "subswarm_active": false,
+  "subswarm_manifest_path": null,
+  "git_branch": "swarm/cubicle-01",
+  "git_diff_summary": null,
+  "verification_commands": [],
+  "verification_passed": null,
+  "veto_history": [],
+  "error_log": null,
+  "notes": "Reassigned from cubicle-01 to cubicle-02 mid-work."
+}

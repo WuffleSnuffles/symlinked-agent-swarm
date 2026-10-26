@@ -1,0 +1,20 @@
+{
+  "title": "[SPLIT] Frontend styling overhaul",
+  "description": "Child subtask split from task-mvp0yvdz-iojn mid-work.",
+  "assigned_cubicle": "cubicle-01",
+  "priority": "high",
+  "column": "in_progress",
+  "id": "task-mvp0yxjf-cz2d",
+  "created_at": "2026-10-26T08:59:06.699Z",
+  "claimed_at": "2026-10-26T08:59:06.699Z",
+  "completed_at": null,
+  "progress_percent": 0,
+  "subswarm_active": false,
+  "subswarm_manifest_path": null,
+  "git_branch": "swarm/cubicle-01",
+  "git_diff_summary": null,
+  "verification_commands": [],
+  "verification_passed": null,
+  "veto_history": [],
+  "error_log": null
+}

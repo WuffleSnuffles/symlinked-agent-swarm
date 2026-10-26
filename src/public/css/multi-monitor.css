@@ -1,0 +1,156 @@
+/**
+ * src/public/css/multi-monitor.css
+ *
+ * Multi-Monitor Engine & Detachable Panel Pop-Out Mode Styling.
+ * Supports:
+ * - Proportional layouts across 1, 2, 3, or X displays.
+ * - Single-window pop-out detached routes (?panel=cubicles, ?panel=console, ?panel=taskboard).
+ */
+
+/* Main 3-Section Panopticon Container */
+#panopticon-main-container {
+  display: grid;
+  grid-template-columns: var(--col-left-width, 32%) var(--col-center-width, 38%) var(--col-right-width, 30%);
+  height: calc(100vh - 40px);
+  width: 100vw;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Individual Column Sections */
+.panopticon-section {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  overflow: hidden;
+  position: relative;
+}
+.panopticon-section:last-child {
+  border-right: none;
+}
+
+.section-header-bar {
+  height: 36px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.section-title-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--color-text-normal);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-detach {
+  background: transparent;
+  color: var(--color-text-dim);
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.15s ease;
+}
+.btn-detach:hover {
+  background: var(--border-active);
+  color: var(--color-cyan);
+  border-color: var(--color-cyan);
+}
+
+/* Multi-Monitor Proportional Layout Presets */
+body[data-monitors="1"] #panopticon-main-container {
+  --col-left-width: 32%;
+  --col-center-width: 38%;
+  --col-right-width: 30%;
+}
+
+body[data-monitors="2"] #panopticon-main-container {
+  --col-left-width: 45%;
+  --col-center-width: 55%;
+  --col-right-width: 0%;
+}
+body[data-monitors="2"] #section-taskboard {
+  display: none !important;
+}
+
+body[data-monitors="3"] #panopticon-main-container {
+  --col-left-width: 33.333%;
+  --col-center-width: 33.333%;
+  --col-right-width: 33.333%;
+}
+
+body[data-monitors="spanned"] #panopticon-main-container {
+  --col-left-width: 30%;
+  --col-center-width: 40%;
+  --col-right-width: 30%;
+}
+
+/* Detachable Panel Pop-Out Modes (?panel=cubicles, ?panel=console, ?panel=taskboard) */
+
+/* Left Section Solo (Cubicles Matrix) */
+body.panel-cubicles #section-console,
+body.panel-cubicles #section-taskboard {
+  display: none !important;
+}
+body.panel-cubicles #section-cubicles {
+  width: 100vw !important;
+  border-right: none !important;
+}
+body.panel-cubicles #panopticon-main-container {
+  grid-template-columns: 1fr !important;
+}
+
+/* Center Section Solo (Overseer Console & Swarm Radar) */
+body.panel-console #section-cubicles,
+body.panel-console #section-taskboard {
+  display: none !important;
+}
+body.panel-console #section-console {
+  width: 100vw !important;
+  border-right: none !important;
+}
+body.panel-console #panopticon-main-container {
+  grid-template-columns: 1fr !important;
+}
+
+/* Right Section Solo (Taskboard Kanban) */
+body.panel-taskboard #section-cubicles,
+body.panel-taskboard #section-console {
+  display: none !important;
+}
+body.panel-taskboard #section-taskboard {
+  width: 100vw !important;
+  border-right: none !important;
+}
+body.panel-taskboard #panopticon-main-container {
+  grid-template-columns: 1fr !important;
+}
+
+/* Standalone Detached Window Adjustments */
+body[class*="panel-"] .btn-detach {
+  display: none !important;
+}
+body[class*="panel-"] #monitor-layout-select {
+  display: none !important;
+}

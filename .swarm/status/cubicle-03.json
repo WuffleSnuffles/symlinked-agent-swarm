@@ -1,0 +1,39 @@
+{
+  "id": "cubicle-03",
+  "config": {
+    "id": "cubicle-03",
+    "slot_index": 2,
+    "row": 0,
+    "col": 2,
+    "enabled": true,
+    "brand": "GPT / OpenAI",
+    "model": "gpt-astra",
+    "display_name": "GPT Astra (Very High)",
+    "thinking_level": "Very High",
+    "thinking_budget_tokens": 32000,
+    "can_spawn_subswarm": false,
+    "cli_template": "openai api chat.completions.create --model {{model}} --input \"{{prompt}}\" --workdir \"{{worktree_dir}}\"",
+    "api_key_env_var": "OPENAI_API_KEY",
+    "quota": {
+      "max_tokens": 1500000,
+      "tokens_used": 0,
+      "max_cost_usd": 30,
+      "cost_usd_accumulated": 0
+    },
+    "port": 4103
+  },
+  "status": "idle",
+  "state": "Relaxed/Idle",
+  "current_task_id": null,
+  "active_subswarm_id": null,
+  "surface_thoughts": "Initialized. Standing by for instructions.",
+  "stamina_percentage": 100,
+  "fatigue_percentage": 0,
+  "stamina_tier": "energized",
+  "last_heartbeat": "2026-10-26T08:59:12.482Z",
+  "worktree_path": "H:\\My Drive\\Gemini Antigravity\\scratch\\symlinked_agent_swarm\\worktrees\\cubicle-03",
+  "branch_name": "swarm/cubicle-03",
+  "process_pid": null,
+  "port": 4103,
+  "error_details": null
+}

@@ -1,0 +1,35 @@
+{
+  "sheets": [
+    {
+      "name": "Consul Nia Nova Sheet",
+      "file": "consul_nia_nova_sheet.jpg",
+      "source": "consul_nia_nova_lux_cyberpunk_sheet_1792982091396.jpg",
+      "dimensions": "2x2",
+      "quadrants": {
+        "idle_observing": [0, 0],
+        "debating": [100, 0],
+        "nia_impatient": [0, 100],
+        "consensus_celebration": [100, 100]
+      }
+    },
+    {
+      "name": "Consul Ferric Lunaux Sheet",
+      "file": "consul_ferric_lunaux_sheet.jpg",
+      "source": "consul_ferric_lunaux_lucian_cyberpunk_sheet_1792982043540.jpg",
+      "dimensions": "2x2",
+      "quadrants": {
+        "idle_observing": [0, 0],
+        "debating": [100, 0],
+        "veto_clash": [0, 100],
+        "night_shift_afk": [100, 100]
+      }
+    },
+    {
+      "name": "Consuls Wrestling Clash",
+      "file": "consuls_wrestling_clash.jpg",
+      "source": "consuls_wrestling_clash_v2_1792982145487.jpg",
+      "dimensions": "1x1 full clash scene",
+      "state": "wrestling_fistfight"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "cubicle-12",
+  "config": {
+    "id": "cubicle-12",
+    "slot_index": 11,
+    "row": 2,
+    "col": 3,
+    "enabled": false,
+    "brand": null,
+    "model": null,
+    "display_name": "Unassigned Slot 12",
+    "thinking_level": "Medium",
+    "thinking_budget_tokens": 0,
+    "can_spawn_subswarm": false,
+    "cli_template": "",
+    "api_key_env_var": "",
+    "quota": {
+      "max_tokens": 1000000,
+      "tokens_used": 0,
+      "max_cost_usd": 0,
+      "cost_usd_accumulated": 0
+    },
+    "port": 4112
+  },
+  "status": "vacant",
+  "state": "Vacant",
+  "current_task_id": null,
+  "active_subswarm_id": null,
+  "surface_thoughts": "Slot unassigned.",
+  "stamina_percentage": 100,
+  "fatigue_percentage": 0,
+  "stamina_tier": "energized",
+  "last_heartbeat": "2026-10-26T08:59:12.992Z",
+  "worktree_path": "H:\\My Drive\\Gemini Antigravity\\scratch\\symlinked_agent_swarm\\worktrees\\cubicle-12",
+  "branch_name": "swarm/cubicle-12",
+  "process_pid": null,
+  "port": 4112,
+  "error_details": null
+}

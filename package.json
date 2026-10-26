@@ -1,0 +1,41 @@
+{
+  "name": "symlinked-agent-swarm",
+  "version": "1.0.0",
+  "description": "Production-ready Symlinked Agent Swarm System and Brutalist Dystopian Cyberpunk Panopticon Application",
+  "type": "module",
+  "main": "dist/server/index.js",
+  "scripts": {
+    "sync:assets": "node scripts/sync-avatar-assets.mjs",
+    "stage:binaries": "node scripts/stage-binaries.mjs",
+    "pretest": "node scripts/sync-avatar-assets.mjs && node scripts/stage-binaries.mjs",
+    "start": "tsx src/server/index.ts",
+    "build": "tsc",
+    "build:exe": "pwsh -File scripts/build-exe.ps1",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e"
+  },
+  "keywords": [
+    "agent-swarm",
+    "panopticon",
+    "symlinks",
+    "worktrees",
+    "subswarms",
+    "consular-governance"
+  ],
+  "author": "holdenliu1",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.7",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.20.2",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5",
+    "vitest": "^1.5.0"
+  }
+}

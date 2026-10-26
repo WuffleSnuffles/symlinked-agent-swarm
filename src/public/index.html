@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SYMLINKED AGENT SWARM // PANOPTICON SURVEILLANCE MATRIX</title>
+  
+  <!-- Brutalist Cyberpunk Panopticon Stylesheet Suite -->
+  <link rel="stylesheet" href="css/brutalist-theme.css" />
+  <link rel="stylesheet" href="css/panopticon-grid.css" />
+  <link rel="stylesheet" href="css/multi-monitor.css" />
+  <link rel="stylesheet" href="css/twin-sauron.css" />
+  <link rel="stylesheet" href="css/consular-avatars.css" />
+  <link rel="stylesheet" href="css/prompt-attachments.css" />
+  <link rel="stylesheet" href="css/media-lightbox.css" />
+  <link rel="stylesheet" href="css/question-widget.css" />
+</head>
+<body data-monitors="1" data-avatar-state="idle_observing">
+  <!-- CRT Scanline HUD Overlay Layer -->
+  <div class="scanlines-overlay" id="scanlines-overlay"></div>
+
+  <!-- Top Global Surveillance HUD Header -->
+  <header id="panopticon-hud-header">
+    <div class="hud-title-block">
+      <span class="hud-logo-beacon" id="ws-status-beacon" title="WebSocket Live Bus Connected"></span>
+      <h1 class="hud-system-title">
+        <span>SYMLINKED AGENT SWARM</span>
+        <span class="hud-ver">v1.0.0 [PANOPTICON MATRIX]</span>
+      </h1>
+    </div>
+
+    <!-- Dual Consular Overwatch Badges -->
+    <div class="hud-consul-status-strip">
+      <div class="consul-badge-chip consul-nia" id="hud-consul-nia-badge">
+        <span class="badge-tag tag-cyan">CONSUL I</span>
+        <strong>NIA NOVA</strong>
+        <span class="badge-tag">REBELLIOUS // LUX</span>
+      </div>
+      <div class="consul-badge-chip consul-ferric" id="hud-consul-ferric-badge">
+        <span class="badge-tag tag-amber">CONSUL II</span>
+        <strong>FERRIC LUNAUX</strong>
+        <span class="badge-tag">REALIST // LUCIAN</span>
+      </div>
+      <div class="badge-tag tag-phosphor" id="self-update-hud-badge">SELF-UPDATE: READY</div>
+    </div>
+
+    <!-- HUD Layout & System Controls -->
+    <div class="hud-controls-group">
+      <label for="monitor-layout-select" class="badge-tag">DISPLAYS:</label>
+      <select id="monitor-layout-select" class="brutalist-select">
+        <option value="1">1 MONITOR (3-COL)</option>
+        <option value="2">2 MONITORS (SPAN)</option>
+        <option value="3">3 MONITORS (EQUAL)</option>
+        <option value="spanned">AUTO PROPORTIONAL</option>
+      </select>
+
+      <button type="button" class="brutalist-btn" id="toggle-scanlines-btn" title="Toggle CRT Scanline HUD">
+        SCANLINES: ON
+      </button>
+    </div>
+  </header>
+
+  <!-- Master 3-Section Panopticon Container -->
+  <main id="panopticon-main-container">
+
+    <!-- ================================================================= -->
+    <!-- SECTION 1 (LEFT): 4x4 Grid, Twin Sauron Masthead, Sandbox Drawer -->
+    <!-- ================================================================= -->
+    <section class="panopticon-section" id="section-cubicles">
+      <div class="section-header-bar">
+        <span class="section-title-label">
+          <span class="badge-tag tag-amber">[COL-01]</span>
+          4x4 WORKER CUBICLE ROSTER
+        </span>
+        <div class="section-actions">
+          <button type="button" class="btn-detach" data-detach-panel="cubicles" title="Detach Left Section into Dedicated Monitor Window">
+            [ ↗ DETACH ]
+          </button>
+        </div>
+      </div>
+
+      <!-- Twin Sauron Mechanical Masthead -->
+      <div class="twin-sauron-masthead" id="twin-sauron-masthead">
+        <!-- Consul Nia Nova (Eye-α, Prismatic Light-Mage Iris) -->
+        <div class="sauron-eye-module" id="eye-consul-nia" data-consul="Nia">
+          <div class="eye-outer-housing">
+            <div class="eye-mechanical-ring ring-spin-ccw"></div>
+            <div class="eye-iris nia-prismatic-iris">
+              <div class="eye-pupil slit-pupil"></div>
+            </div>
+          </div>
+          <div class="eye-telemetry-hud">
+            <span class="eye-callsign">CONSUL NIA NOVA // EYE-α</span>
+            <span class="eye-mode-indicator" id="nia-beam-mode">AMBIENT_SWEEP</span>
+            <span class="eye-coord-readout" id="nia-beam-coords">X: 28.4% | Y: 12.1%</span>
+          </div>
+        </div>
+
+        <!-- Central Neural Synapse Bridge -->
+        <div class="sauron-bridge-synapse">
+          <div class="synapse-hud-meter">
+            <span class="synapse-label">CONSULAR SYNAPSE</span>
+            <div class="synapse-pulse-line"></div>
+          </div>
+        </div>
+
+        <!-- Consul Ferric Lunaux (Eye-β, Tactical Aperture Iris) -->
+        <div class="sauron-eye-module" id="eye-consul-ferric" data-consul="Ferric">
+          <div class="eye-outer-housing">
+            <div class="eye-mechanical-ring ring-spin-cw"></div>
+            <div class="eye-iris ferric-tactical-iris">
+              <div class="eye-pupil circular-aperture"></div>
+            </div>
+          </div>
+          <div class="eye-telemetry-hud">
+            <span class="eye-callsign">CONSUL FERRIC LUNAUX // EYE-β</span>
+            <span class="eye-mode-indicator" id="ferric-beam-mode">AMBIENT_SWEEP</span>
+            <span class="eye-coord-readout" id="ferric-beam-coords">X: 71.6% | Y: 12.1%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas Raycasting Stage & 4x4 Spatial Matrix Grid -->
+      <div class="cubicles-canvas-stage" id="cubicles-canvas-stage">
+        <!-- 2D Raycast Canvas Overlay (Pointer events pass-through) -->
+        <canvas id="twin-sauron-canvas"></canvas>
+
+        <!-- SVG Inter-Cubicle Dependency Lines Overlay -->
+        <svg id="contracts-dependency-svg"></svg>
+
+        <!-- 4x4 Grid Container (cubicle-01 through cubicle-16) -->
+        <div class="cubicle-grid-container" id="cubicle-grid">
+          <!-- Dynamically populated by cubicle-grid.js -->
+        </div>
+
+        <!-- Port Sandbox Live Preview Drawer -->
+        <aside class="sandbox-drawer hidden" id="port-sandbox-drawer">
+          <div class="sandbox-drawer-header">
+            <span id="sandbox-drawer-title" class="badge-tag tag-cyan">PORT SANDBOX PREVIEW</span>
+            <button type="button" class="brutalist-btn" id="btn-close-sandbox">CLOSE [X]</button>
+          </div>
+          <div class="sandbox-iframe-wrapper">
+            <iframe id="sandbox-iframe" src="about:blank"></iframe>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SECTION 2 (CENTER): Overseer Terminal, Swarm Radar, Vault & Avatars -->
+    <!-- ================================================================= -->
+    <section class="panopticon-section" id="section-console">
+      <div class="section-header-bar">
+        <span class="section-title-label">
+          <span class="badge-tag tag-cyan">[COL-02]</span>
+          DUAL-CONSUL COMMAND & SWARM RADAR
+        </span>
+        <div class="section-actions">
+          <button type="button" class="btn-detach" data-detach-panel="console" title="Detach Center Section into Dedicated Monitor Window">
+            [ ↗ DETACH ]
+          </button>
+        </div>
+      </div>
+
+      <!-- Navigation Tab Bar -->
+      <nav class="console-nav-tabs" style="display: flex; background: #0c0e15; border-bottom: 1px solid var(--border-color);">
+        <button type="button" class="brutalist-btn btn-active" id="tab-btn-console" style="flex: 1; border-top: none; border-left: none;">
+          [1] OVERSEER CONSOLE
+        </button>
+        <button type="button" class="brutalist-btn" id="tab-btn-radar" style="flex: 1; border-top: none;">
+          [2] SWARM RADAR
+        </button>
+        <button type="button" class="brutalist-btn" id="tab-btn-vault" style="flex: 1; border-top: none; border-right: none;">
+          [3] VAULT (PREFERENCES & MCP)
+        </button>
+      </nav>
+
+      <!-- Tab View 1: Overseer Console -->
+      <div class="console-tab-view" id="view-console" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Two-Gate Consular Consensus Status Banner -->
+        <div class="consular-gate-status-bar" style="height: 30px; background: #0f121d; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 10px;">
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <span>GATE 1 (PLAN): <strong id="gate1-status" class="badge-tag tag-cyan">RATIFIED (2/2)</strong></span>
+            <span>GATE 2 (SOLUTION): <strong id="gate2-status" class="badge-tag tag-phosphor">READY (2/2)</strong></span>
+          </div>
+          <div>
+            <span id="incident-counter-badge" class="badge-tag tag-amber">0 INCIDENTS</span>
+          </div>
+        </div>
+
+        <!-- Incident Alert Ticker Drawer -->
+        <div id="incident-alert-ticker" style="display: none; background: rgba(239, 68, 68, 0.15); border-bottom: 1px solid var(--color-crimson); padding: 4px 12px; font-size: 11px; color: var(--color-crimson);"></div>
+
+        <!-- Live Inter-Consul Dialogue Stream -->
+        <div id="consular-dialogue-feed" style="flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <!-- Dynamically populated by overseer-console.js -->
+        </div>
+
+        <!-- Interactive Question Card / Modal Mount (Antigravity/Claude Stepper) -->
+        <div class="consular-question-widget hidden" id="consular-question-widget">
+          <!-- Dynamically rendered by question-widget.js -->
+        </div>
+
+        <!-- Center Prompt Dock with Attachment Chips & Corner Consular Avatars -->
+        <div class="console-prompt-wrapper" id="console-prompt-container">
+          <!-- Staged Attachment Chips Strip -->
+          <div class="prompt-attachment-chips-bar" id="prompt-attachments-bar" style="display: none;"></div>
+
+          <!-- Prompt Command Toolbar -->
+          <div class="prompt-action-toolbar">
+            <div class="attachment-button-group">
+              <button type="button" class="btn-prompt-tool" id="btn-attach-file">📎 ATTACH FILE</button>
+              <input type="file" id="input-file-picker" multiple style="display: none;" />
+
+              <button type="button" class="btn-prompt-tool" id="btn-attach-folder">📁 ATTACH FOLDER</button>
+              <input type="file" id="input-folder-picker" webkitdirectory directory multiple style="display: none;" />
+
+              <button type="button" class="btn-prompt-tool" id="btn-browse-disk">💻 BROWSE DISK...</button>
+            </div>
+            <div class="prompt-telemetry-status">
+              <span id="prompt-token-estimate">0 TOKENS</span>
+            </div>
+          </div>
+
+          <!-- Dropzone, Textarea & Corner Consular Avatar Box -->
+          <div class="prompt-dropzone" id="prompt-dropzone">
+            <textarea
+              id="overseer-prompt-input"
+              placeholder="Transmit directive or command to Nia & Ferric... Drag & drop files or folders here"
+              rows="3"
+            ></textarea>
+
+            <div class="dropzone-drag-overlay" id="dropzone-drag-overlay" style="display: none;">
+              <div class="dropzone-cyber-border">
+                <span class="dropzone-text">[ENGAGE ATTACHMENT INGESTION] DROP FILES OR FOLDERS HERE</span>
+              </div>
+            </div>
+
+            <!-- Corner Consular Avatar Widget (Nia mid-20s Lux & Ferric late-30s Lucian crossed arms) -->
+            <div id="consular-prompt-avatar-widget" class="consular-avatar-box">
+              <div class="avatar-crt-scanlines"></div>
+              
+              <header class="avatar-hud-strip">
+                <div class="hud-left">
+                  <span class="hud-indicator"></span>
+                  <span id="avatar-state-label" class="hud-state-text">IDLE_OBSERVING</span>
+                </div>
+                <div class="hud-right">
+                  <span class="hud-consuls-tag">NIA // FERRIC</span>
+                  <button id="avatar-drawer-toggle" class="brutalist-mini-btn" title="Toggle 12-Scenario Demo Drawer">[DEMO ▼]</button>
+                </div>
+              </header>
+
+              <div id="avatar-stage-viewport" class="avatar-stage-viewport">
+                <!-- Dual Split Consuls Viewport -->
+                <div id="stage-dual-consuls" class="stage-dual-consuls">
+                  <!-- Nia Nova Stage (Lux-Inspired Cyberpunk Light-Mage) -->
+                  <div id="consul-stage-nia" class="consul-substage nia-substage">
+                    <div class="avatar-texture-layer nia-texture-sheet"></div>
+                    <span class="avatar-nametag">NIA // 24</span>
+                  </div>
+
+                  <!-- Central Divider -->
+                  <div class="consul-divider">
+                    <span class="divider-line"></span>
+                    <span class="clash-symbol">⚖</span>
+                    <span class="divider-line"></span>
+                  </div>
+
+                  <!-- Ferric Lunaux Stage (Lucian-Inspired Grumpy Crossed-Arms Realist) -->
+                  <div id="consul-stage-ferric" class="consul-substage ferric-substage">
+                    <div class="avatar-texture-layer ferric-texture-sheet"></div>
+                    <span class="avatar-nametag">FERRIC // 38</span>
+                  </div>
+                </div>
+
+                <!-- Unified Wrestling Clash Stage (Scenario 03: wrestling_fistfight) -->
+                <div id="stage-wrestling-clash" class="stage-wrestling-clash hidden">
+                  <div class="avatar-texture-layer wrestling-texture-sheet"></div>
+                  <div class="wrestling-energy-grid"></div>
+                </div>
+
+                <!-- Canvas Particle Sparks & FX Overlay -->
+                <canvas id="avatar-fx-canvas" class="avatar-fx-canvas" width="270" height="110"></canvas>
+
+                <!-- Dialogue Speech Bubble Ticker -->
+                <div id="avatar-speech-ticker" class="avatar-speech-ticker hidden">
+                  <span id="speech-consul-badge" class="speech-badge">NIA:</span>
+                  <span id="speech-content-text" class="speech-text">Analyzing worker velocity...</span>
+                </div>
+              </div>
+
+              <!-- Manual 12-Scenario Selector Drawer -->
+              <div id="consular-scenario-drawer" class="consular-scenario-drawer collapsed">
+                <div class="drawer-header">
+                  <span>12-SCENARIO MANUAL TEST RIG</span>
+                  <button id="drawer-live-sync-btn" class="brutalist-btn-tag">LIVE SYNC: ON</button>
+                </div>
+                <div class="drawer-grid">
+                  <button class="scenario-btn active" data-scenario="idle_observing"><span class="idx">01</span> IDLE</button>
+                  <button class="scenario-btn" data-scenario="debating"><span class="idx">02</span> DEBATE</button>
+                  <button class="scenario-btn highlight-red" data-scenario="wrestling_fistfight"><span class="idx">03</span> WRESTLE</button>
+                  <button class="scenario-btn" data-scenario="nia_impatient"><span class="idx">04</span> IMPATIENT</button>
+                  <button class="scenario-btn highlight-crimson" data-scenario="disciplinary_execution"><span class="idx">05</span> EXECUTE</button>
+                  <button class="scenario-btn highlight-cyan" data-scenario="consensus_celebration"><span class="idx">06</span> CONSENSUS</button>
+                  <button class="scenario-btn highlight-red" data-scenario="veto_clash"><span class="idx">07</span> VETO</button>
+                  <button class="scenario-btn highlight-amber" data-scenario="error_alarm"><span class="idx">08</span> ALARM</button>
+                  <button class="scenario-btn" data-scenario="gladiator_spectators"><span class="idx">09</span> GLADIATOR</button>
+                  <button class="scenario-btn" data-scenario="courier_arrival"><span class="idx">10</span> COURIER</button>
+                  <button class="scenario-btn highlight-cyan" data-scenario="self_evolution_upgrade"><span class="idx">11</span> EVOLVE</button>
+                  <button class="scenario-btn" data-scenario="night_shift_afk"><span class="idx">12</span> NIGHT AFK</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Transmit Button -->
+            <button id="btn-submit-directive" class="btn-panopticon-send">
+              <span>TRANSMIT</span>
+              <span>↵</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab View 2: Swarm Radar -->
+      <div class="console-tab-view" id="view-radar" style="flex: 1; display: none; flex-direction: column; overflow: hidden; padding: 12px; gap: 12px;">
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="brutalist-btn btn-active" id="radar-subtab-locks">FILE LOCKS</button>
+          <button type="button" class="brutalist-btn" id="radar-subtab-gladiator">GLADIATOR</button>
+          <button type="button" class="brutalist-btn" id="radar-subtab-checkpoints">TIME-MACHINE</button>
+          <button type="button" class="brutalist-btn" id="radar-subtab-afk">NIGHT AFK</button>
+        </div>
+
+        <div id="radar-content-area" style="flex: 1; overflow-y: auto; background: #0a0c12; border: 1px solid var(--border-color); padding: 12px;">
+          <!-- Dynamically populated by overseer-console.js -->
+        </div>
+      </div>
+
+      <!-- Tab View 3: Vault -->
+      <div class="console-tab-view" id="view-vault" style="flex: 1; display: none; flex-direction: column; overflow: hidden; padding: 12px; gap: 12px;">
+        <h3 class="badge-tag tag-cyan">LEARNED PREFERENCES, SKILLS & MCP VAULT</h3>
+        <div id="vault-content-area" style="flex: 1; overflow-y: auto; background: #0a0c12; border: 1px solid var(--border-color); padding: 12px;">
+          <!-- Dynamically populated by overseer-console.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SECTION 3 (RIGHT): Shared Taskboard & Mid-Work Intervention Panel -->
+    <!-- ================================================================= -->
+    <section class="panopticon-section" id="section-taskboard">
+      <div class="section-header-bar">
+        <span class="section-title-label">
+          <span class="badge-tag tag-phosphor">[COL-03]</span>
+          SHARED SWARM TASKBOARD
+        </span>
+        <div class="section-actions">
+          <button type="button" class="btn-detach" data-detach-panel="taskboard" title="Detach Right Section into Dedicated Monitor Window">
+            [ ↗ DETACH ]
+          </button>
+        </div>
+      </div>
+
+      <!-- Overall Swarm Mission Progress Bar Header -->
+      <div class="mission-progress-container" style="padding: 10px 12px; background: #0e111a; border-bottom: 1px solid var(--border-color);">
+        <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px;">
+          <span>SWARM MISSION COMPLETION: <strong id="mission-progress-percent">0%</strong></span>
+          <span style="color: var(--color-text-dim);">
+            TODO: <span id="counter-todo">0</span> | IN_PROG: <span id="counter-prog">0</span> | REVIEW: <span id="counter-review">0</span> | DONE: <span id="counter-done">0</span>
+          </span>
+        </div>
+        <div style="height: 6px; background: #131722; border: 1px solid #232a3d;">
+          <div id="mission-progress-fill" style="width: 0%; height: 100%; background: var(--color-phosphor); transition: width 0.3s ease;"></div>
+        </div>
+      </div>
+
+      <!-- 4-Column Kanban Board -->
+      <div class="kanban-matrix-board" id="kanban-board" style="flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px; overflow-x: auto; background: #08090d;">
+        <!-- Column 1: To Do -->
+        <div class="kanban-col" id="col-todo" style="background: #0d1017; border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+          <div style="padding: 6px 8px; background: #121622; border-bottom: 1px solid var(--border-color); font-size: 10px; font-weight: 700; color: var(--color-text-dim);">
+            TO DO
+          </div>
+          <div class="task-list" style="flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+
+        <!-- Column 2: In Progress -->
+        <div class="kanban-col" id="col-in_progress" style="background: #0d1017; border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+          <div style="padding: 6px 8px; background: #121622; border-bottom: 1px solid var(--border-color); font-size: 10px; font-weight: 700; color: var(--color-amber);">
+            IN PROGRESS
+          </div>
+          <div class="task-list" style="flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+
+        <!-- Column 3: Review -->
+        <div class="kanban-col" id="col-review" style="background: #0d1017; border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+          <div style="padding: 6px 8px; background: #121622; border-bottom: 1px solid var(--border-color); font-size: 10px; font-weight: 700; color: var(--color-cyan);">
+            CONSULAR REVIEW
+          </div>
+          <div class="task-list" style="flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+
+        <!-- Column 4: Done -->
+        <div class="kanban-col" id="col-done" style="background: #0d1017; border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+          <div style="padding: 6px 8px; background: #121622; border-bottom: 1px solid var(--border-color); font-size: 10px; font-weight: 700; color: var(--color-phosphor);">
+            DONE
+          </div>
+          <div class="task-list" style="flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+      </div>
+
+      <!-- Mid-Work Consular Intervention Action Drawer -->
+      <div id="mid-work-intervention-drawer" style="padding: 8px 12px; background: #0e111a; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="badge-tag tag-crimson">MID-WORK CONSULAR INTERVENTION (2/2 GATED)</span>
+          <button type="button" class="brutalist-btn" id="btn-trigger-impatience" title="Trigger Nia's Impatience Protocol">
+            ⚡ NIA IMPATIENCE
+          </button>
+        </div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <button type="button" class="brutalist-btn" id="btn-intervention-amend">AMEND PROMPT</button>
+          <button type="button" class="brutalist-btn" id="btn-intervention-evict">EVICT WORKER</button>
+          <button type="button" class="brutalist-btn" id="btn-intervention-split">SPLIT TASK</button>
+          <button type="button" class="brutalist-btn" id="btn-intervention-rebalance">REBALANCE</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================================================================= -->
+  <!-- MODALS: Media Lightbox, PDF Inspector & Disk Browser              -->
+  <!-- ================================================================= -->
+
+  <!-- Panopticon Click-to-Zoom Lightbox Modal -->
+  <div id="panopticon-lightbox-modal" class="hidden">
+    <div class="lightbox-header">
+      <span class="lightbox-title" id="lightbox-filename-title">ARTIFACT LIGHTBOX</span>
+      <div class="lightbox-toolbar">
+        <button type="button" class="brutalist-btn" id="lightbox-zoom-out">-</button>
+        <span id="lightbox-zoom-readout" class="badge-tag">100%</span>
+        <button type="button" class="brutalist-btn" id="lightbox-zoom-in">+</button>
+        <button type="button" class="brutalist-btn" id="lightbox-zoom-reset">1:1</button>
+        <button type="button" class="brutalist-btn" id="lightbox-close">CLOSE [ESC]</button>
+      </div>
+    </div>
+    <div class="lightbox-viewport" id="lightbox-viewport">
+      <img id="lightbox-image-target" class="lightbox-image-target" src="" alt="Artifact Preview" />
+    </div>
+  </div>
+
+  <!-- Modal Fullscreen PDF Inspector -->
+  <div id="pdf-inspector-modal" class="hidden">
+    <div class="pdf-inspector-header">
+      <span class="lightbox-title" id="pdf-modal-title">PDF ARCHITECTURE INSPECTOR</span>
+      <button type="button" class="brutalist-btn" id="pdf-modal-close">RETURN TO PANOPTICON [ESC]</button>
+    </div>
+    <div class="pdf-inspector-frame-wrapper">
+      <iframe id="pdf-inspector-iframe" src="about:blank"></iframe>
+    </div>
+  </div>
+
+  <!-- Server Disk Browser Modal (Prompt Attachments) -->
+  <div id="file-browser-modal" class="modal-overlay hidden">
+    <div class="browser-modal-window">
+      <div class="browser-modal-header">
+        <span class="browser-title">LOCAL FILESYSTEM BROWSER // PROMPT ATTACHMENT</span>
+        <button type="button" class="brutalist-btn" id="btn-close-disk-browser">×</button>
+      </div>
+      <div class="browser-breadcrumb-bar">
+        <button type="button" class="brutalist-btn" id="btn-browser-up-dir">▲ UP</button>
+        <span class="breadcrumb-path" id="browser-current-path-text">/</span>
+      </div>
+      <div class="browser-tree-view" id="browser-tree-container">
+        <!-- Dynamically populated by prompt-attachment.js -->
+      </div>
+      <div class="browser-modal-footer">
+        <span id="browser-selected-count" class="badge-tag">0 SELECTED</span>
+        <button type="button" class="brutalist-btn btn-active" id="btn-insert-selected-paths">INSERT SELECTED INTO PROMPT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Master JavaScript Application Bootstrap -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
