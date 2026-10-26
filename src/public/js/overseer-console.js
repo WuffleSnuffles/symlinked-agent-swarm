@@ -40,6 +40,7 @@ export class OverseerConsoleController {
 
     this.currentRadarTab = 'locks';
     this.radarData = { locks: [], checkpoints: [], afk: false };
+    this.renderedMessageIds = new Set();
 
     this.bindEvents();
   }
@@ -118,24 +119,64 @@ export class OverseerConsoleController {
     this.refreshRadarView();
   }
 
+  escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   appendDialogueMessage(msg) {
-    if (!this.dialogueFeed) return;
+    if (!this.dialogueFeed || !msg) return;
+
+    if (msg.id && this.renderedMessageIds.has(msg.id)) {
+      return;
+    }
+    if (msg.id) {
+      this.renderedMessageIds.add(msg.id);
+    }
+
+    const senderStr = String(msg.sender || '');
+    const isUser =
+      senderStr === 'Overseer' ||
+      senderStr === 'User' ||
+      msg.tone === 'user_directive';
+    const isNia = !isUser && (senderStr.includes('Nia') || senderStr === 'Consul I');
+
+    // If a persisted user message arrives, remove any temporary optimistic user bubble for the same text
+    if (isUser && !msg._optimistic) {
+      const optBubbles = this.dialogueFeed.querySelectorAll('.optimistic-user-bubble');
+      optBubbles.forEach((b) => b.remove());
+    }
+
+    let senderColor = 'var(--color-amber)';
+    let senderName = 'CONSUL II // FERRIC LUNAUX [GPT ASTRA]';
+    let alignStyle = 'border-left: 3px solid var(--color-amber);';
+    let bgStyle = '#0f121b';
+
+    if (isUser) {
+      senderColor = 'var(--color-phosphor)';
+      senderName = 'YOU // OVERSEER';
+      alignStyle = 'border-right: 3px solid var(--color-phosphor); margin-left: 24px;';
+      bgStyle = '#0b1612';
+    } else if (isNia) {
+      senderColor = 'var(--color-cyan)';
+      senderName = 'CONSUL I // NIA NOVA [GEMINI 4 ARGON]';
+      alignStyle = 'border-left: 3px solid var(--color-cyan);';
+    }
 
     const row = document.createElement('div');
-    const isNia = (msg.sender || '').includes('Nia');
-    const senderColor = isNia ? 'var(--color-cyan)' : 'var(--color-amber)';
-    const senderName = isNia ? 'CONSUL NIA NOVA' : 'CONSUL FERRIC LUNAUX';
-    const alignStyle = isNia ? 'border-left: 3px solid var(--color-cyan);' : 'border-left: 3px solid var(--color-amber);';
+    row.className = `dialogue-message-bubble${msg._optimistic ? ' optimistic-user-bubble' : ''}`;
+    row.style.cssText = `background: ${bgStyle}; border: 1px solid var(--border-color); ${alignStyle} padding: 8px 10px; margin-bottom: 6px; font-size: 11px;`;
 
-    row.className = 'dialogue-message-bubble';
-    row.style.cssText = `background: #0f121b; border: 1px solid var(--border-color); ${alignStyle} padding: 8px 10px; margin-bottom: 6px; font-size: 11px;`;
+    const formattedContent = this.escapeHtml(msg.content).replace(/\n/g, '<br/>');
 
     row.innerHTML = `
       <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
         <span style="font-weight: 700; color: ${senderColor};">${senderName}</span>
         <span style="font-size: 9px; color: var(--color-text-dim);">${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}</span>
       </div>
-      <div style="color: var(--color-text-bright); line-height: 1.4;">${msg.content}</div>
+      <div style="color: var(--color-text-bright); line-height: 1.45;">${formattedContent}</div>
     `;
 
     // If message includes multimodal attachments
@@ -149,13 +190,21 @@ export class OverseerConsoleController {
       }
     }
 
-    this.dialogueFeed.appendChild(row);
+    // Keep any active CLI thinking indicator at the very bottom of the feed
+    const thinkingEl = this.dialogueFeed.querySelector('.consul-cli-thinking');
+    if (thinkingEl) {
+      this.dialogueFeed.insertBefore(row, thinkingEl);
+    } else {
+      this.dialogueFeed.appendChild(row);
+    }
     this.dialogueFeed.scrollTop = this.dialogueFeed.scrollHeight;
 
-    // Trigger corner avatar speech ticker
-    const avatars = getConsularAvatars();
-    if (avatars) {
-      avatars.displaySpeech(isNia ? 'Nia' : 'Ferric', msg.content);
+    // Trigger corner avatar speech ticker for Consuls
+    if (!isUser) {
+      const avatars = getConsularAvatars();
+      if (avatars) {
+        avatars.displaySpeech(isNia ? 'Nia' : 'Ferric', msg.content);
+      }
     }
   }
 
@@ -179,24 +228,56 @@ export class OverseerConsoleController {
     this.promptInput.value = '';
     if (attachmentMgr) attachmentMgr.clearAttachments();
 
-    // Post deliberate plan
+    // 1. Immediately render optimistic user message in the chat history feed
+    this.appendDialogueMessage({
+      _optimistic: true,
+      sender: 'Overseer',
+      tone: 'user_directive',
+      content: goalText,
+      timestamp: new Date().toISOString(),
+      attachments,
+    });
+
+    // 2. Show live CLI deliberation indicator
+    let thinkingRow = null;
+    if (this.dialogueFeed) {
+      thinkingRow = document.createElement('div');
+      thinkingRow.className = 'consul-cli-thinking';
+      thinkingRow.style.cssText =
+        'background: #101420; border: 1px dashed var(--color-cyan); padding: 6px 10px; margin-bottom: 6px; font-size: 10px; color: var(--color-cyan); letter-spacing: 0.04em;';
+      thinkingRow.textContent =
+        '⚡ NIA (GEMINI 4 ARGON // agy.exe) & FERRIC (GPT ASTRA // codex.exe) DELIBERATING...';
+      this.dialogueFeed.appendChild(thinkingRow);
+      this.dialogueFeed.scrollTop = this.dialogueFeed.scrollHeight;
+    }
+
+    // 3. Post to live Consul CLI chat endpoint
     try {
-      const res = await fetch('/api/governance/plan/deliberate', {
+      const res = await fetch('/api/governance/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goal: goalText,
+          prompt: goalText,
           attachments,
         }),
       });
 
+      if (thinkingRow) thinkingRow.remove();
+
       if (res.ok) {
         const data = await res.json();
-        if (data.gate && data.gate.dialogue) {
-          data.gate.dialogue.forEach((msg) => this.appendDialogueMessage(msg));
+        if (data.userMessage) {
+          this.appendDialogueMessage(data.userMessage);
         }
+        if (data.replies && Array.isArray(data.replies)) {
+          data.replies.forEach((msg) => this.appendDialogueMessage(msg));
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        this.showIncidentAlert(`Directive rejected: ${errData.error || res.statusText}`);
       }
     } catch (err) {
+      if (thinkingRow) thinkingRow.remove();
       this.showIncidentAlert(`Failed to transmit directive: ${err.message}`);
     }
   }

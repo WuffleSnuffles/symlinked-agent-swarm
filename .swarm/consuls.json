@@ -11,7 +11,7 @@
       "display_name": "Gemini 4 Argon (High)",
       "thinking_level": "High",
       "thinking_budget_tokens": 16000,
-      "cli_template": "gemini run --model {{model}} --thinking-budget {{thinking_budget}} --input-file \"{{prompt_file}}\"",
+      "cli_template": "\"C:\\\\Users\\\\green\\\\.gemini\\\\bin\\\\agy.exe\" --model gemini-4-argon-high --dangerously-skip-permissions --print-timeout 0 --disable-slash-commands -p \"{{prompt}}\"",
       "api_key_env_var": "GEMINI_API_KEY",
       "enabled": true,
       "persona": {
@@ -40,7 +40,7 @@
       "display_name": "GPT Astra (Ultra)",
       "thinking_level": "Ultra",
       "thinking_budget_tokens": 64000,
-      "cli_template": "chatgpt --model {{model}} --effort high --input-file \"{{prompt_file}}\"",
+      "cli_template": "\"C:\\\\Users\\\\green\\\\AppData\\\\Local\\\\OpenAI\\\\Codex\\\\bin\\\\e78bad9887fa50cf\\\\codex.exe\" exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral -m gpt-6-astra -",
       "api_key_env_var": "OPENAI_API_KEY",
       "enabled": true,
       "persona": {

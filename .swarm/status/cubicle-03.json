@@ -12,7 +12,7 @@
     "thinking_level": "Very High",
     "thinking_budget_tokens": 32000,
     "can_spawn_subswarm": false,
-    "cli_template": "openai api chat.completions.create --model {{model}} --input \"{{prompt}}\" --workdir \"{{worktree_dir}}\"",
+    "cli_template": "\"C:\\\\Users\\\\green\\\\AppData\\\\Local\\\\OpenAI\\\\Codex\\\\bin\\\\e78bad9887fa50cf\\\\codex.exe\" exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -m gpt-6-astra -C \"{{worktree_dir}}\" \"{{prompt}}\"",
     "api_key_env_var": "OPENAI_API_KEY",
     "quota": {
       "max_tokens": 1500000,
@@ -30,7 +30,7 @@
   "stamina_percentage": 100,
   "fatigue_percentage": 0,
   "stamina_tier": "energized",
-  "last_heartbeat": "2026-10-26T08:59:12.482Z",
+  "last_heartbeat": "2026-10-26T19:09:42.027Z",
   "worktree_path": "H:\\My Drive\\Gemini Antigravity\\scratch\\symlinked_agent_swarm\\worktrees\\cubicle-03",
   "branch_name": "swarm/cubicle-03",
   "process_pid": null,

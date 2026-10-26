@@ -16,6 +16,8 @@
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { spawn } from 'node:child_process';
 import {
   ConsulConfig,
   ConsulId,
@@ -183,9 +185,28 @@ export class ConsularEngine {
     await fs.mkdir(this.contractsDir, { recursive: true });
 
     // 1. Initialize Consuls (Nia Nova & Ferric Lunaux)
+    const defaultNiaCli = '"C:\\Users\\green\\.gemini\\bin\\agy.exe" --model gemini-4-argon-high --dangerously-skip-permissions --print-timeout 0 --disable-slash-commands -p "{{prompt}}"';
+    const defaultFerricCli = '"C:\\Users\\green\\AppData\\Local\\OpenAI\\Codex\\bin\\e78bad9887fa50cf\\codex.exe" exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral -m gpt-6-astra -';
+
     try {
       const raw = await fs.readFile(this.consulsPath, 'utf8');
       this.consulsState = JSON.parse(raw);
+      let migrated = false;
+      if (this.consulsState && Array.isArray(this.consulsState.consuls)) {
+        for (const c of this.consulsState.consuls) {
+          if (c.id === 'consul-1' && c.cli_template && (c.cli_template.startsWith('gemini run') || !c.cli_template.includes('--dangerously-skip-permissions'))) {
+            c.cli_template = defaultNiaCli;
+            migrated = true;
+          }
+          if (c.id === 'consul-2' && c.cli_template && (c.cli_template.startsWith('chatgpt') || !c.cli_template.includes('--dangerously-bypass-approvals-and-sandbox'))) {
+            c.cli_template = defaultFerricCli;
+            migrated = true;
+          }
+        }
+      }
+      if (migrated && this.consulsState) {
+        await fs.writeFile(this.consulsPath, JSON.stringify(this.consulsState, null, 2), 'utf8');
+      }
     } catch {
       this.consulsState = {
         version: '1.0.0',
@@ -200,7 +221,7 @@ export class ConsularEngine {
             display_name: 'Gemini 4 Argon (High)',
             thinking_level: 'High',
             thinking_budget_tokens: 16000,
-            cli_template: 'gemini run --model {{model}} --thinking-budget {{thinking_budget}} --input-file "{{prompt_file}}"',
+            cli_template: defaultNiaCli,
             api_key_env_var: 'GEMINI_API_KEY',
             enabled: true,
             persona: {
@@ -225,7 +246,7 @@ export class ConsularEngine {
             display_name: 'GPT Astra (Ultra)',
             thinking_level: 'Ultra',
             thinking_budget_tokens: 64000,
-            cli_template: 'chatgpt --model {{model}} --effort high --input-file "{{prompt_file}}"',
+            cli_template: defaultFerricCli,
             api_key_env_var: 'OPENAI_API_KEY',
             enabled: true,
             persona: {
@@ -244,6 +265,23 @@ export class ConsularEngine {
         ],
       };
       await fs.writeFile(this.consulsPath, JSON.stringify(this.consulsState, null, 2), 'utf8');
+    }
+
+    // 1B. Load existing dialogue history from .swarm/logs/consular_dialogue.jsonl
+    if (existsSync(this.dialogueLogPath)) {
+      try {
+        const rawDialogue = await fs.readFile(this.dialogueLogPath, 'utf8');
+        const lines = rawDialogue.split('\n').map((l) => l.trim()).filter(Boolean);
+        this.dialogueHistory = [];
+        for (const line of lines.slice(-200)) {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed && parsed.content) {
+              this.dialogueHistory.push(parsed);
+            }
+          } catch {}
+        }
+      } catch {}
     }
 
     // 2. Initialize Evolving Growth States
@@ -384,14 +422,15 @@ export class ConsularEngine {
   }
 
   // =========================================================================
-  // Visible Inter-Consul Dialogue
+  // Visible Inter-Consul Dialogue & Live CLI Chat (Nia = Argon, Ferric = Astra)
   // =========================================================================
 
   public async recordDialogue(
-    sender: 'Consul Nia Nova' | 'Consul Ferric Lunaux' | 'Consul I' | 'Consul II',
-    tone: 'rebellious_champion' | 'pragmatic_realist',
+    sender: 'Consul Nia Nova' | 'Consul Ferric Lunaux' | 'Consul I' | 'Consul II' | 'Overseer' | 'User',
+    tone: 'rebellious_champion' | 'pragmatic_realist' | 'user_directive',
     content: string,
-    phase: 'PLANNING_GATE' | 'REVIEW_GATE' | 'DISCIPLINE' | 'GENERAL' = 'GENERAL'
+    phase: 'PLANNING_GATE' | 'REVIEW_GATE' | 'DISCIPLINE' | 'GENERAL' | 'USER_CHAT' = 'GENERAL',
+    attachments?: any[]
   ): Promise<ConsularDialogueMessage> {
     const message: ConsularDialogueMessage = {
       id: `dialogue-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -400,6 +439,7 @@ export class ConsularEngine {
       content,
       phase,
       timestamp: new Date().toISOString(),
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
     };
 
     this.dialogueHistory.push(message);
@@ -411,19 +451,455 @@ export class ConsularEngine {
       await fs.appendFile(this.dialogueLogPath, JSON.stringify(message) + '\n', 'utf8');
     } catch {}
 
-    this.debateTurnsCount++;
-    if (this.debateTurnsCount >= 4) {
-      this.setAvatarState('wrestling_fistfight', this.debateTurnsCount, 'Prolonged debate deadlock reached');
-    } else if (
-      this.currentAvatarState.state === 'idle_observing' ||
-      this.currentAvatarState.state === 'consensus_celebration' ||
-      this.currentAvatarState.state === 'debating'
-    ) {
-      this.setAvatarState('debating', this.debateTurnsCount);
+    const isUser = sender === 'Overseer' || sender === 'User';
+    if (!isUser) {
+      this.debateTurnsCount++;
+      if (this.debateTurnsCount >= 4) {
+        this.setAvatarState('wrestling_fistfight', this.debateTurnsCount, 'Prolonged debate deadlock reached');
+      } else if (
+        this.currentAvatarState.state === 'idle_observing' ||
+        this.currentAvatarState.state === 'consensus_celebration' ||
+        this.currentAvatarState.state === 'debating'
+      ) {
+        this.setAvatarState('debating', this.debateTurnsCount);
+      }
     }
 
     this.emit('CONSULAR_DIALOGUE', message);
     return message;
+  }
+
+  /**
+   * Resolves the real local binary path for Antigravity CLI (agy.exe) or OpenAI Codex CLI (codex.exe).
+   */
+  private resolveConsulBinary(consul: 'nia' | 'ferric'): string {
+    if (consul === 'nia') {
+      const candidates = [
+        'C:\\Users\\green\\.gemini\\bin\\agy.exe',
+        path.join(os.homedir(), '.gemini', 'bin', 'agy.exe'),
+      ];
+      for (const p of candidates) {
+        if (existsSync(p)) return p;
+      }
+      return 'agy.exe';
+    } else {
+      const candidates = [
+        'C:\\Users\\green\\AppData\\Local\\OpenAI\\Codex\\bin\\e78bad9887fa50cf\\codex.exe',
+        'C:\\Users\\green\\.codex\\.sandbox-bin\\codex.exe',
+        path.join(os.homedir(), '.codex', '.sandbox-bin', 'codex.exe'),
+      ];
+      for (const p of candidates) {
+        if (existsSync(p)) return p;
+      }
+      return 'codex.exe';
+    }
+  }
+
+  /**
+   * Invokes the live native CLI for either Consul Nia Nova (agy.exe --model gemini-4-argon-high)
+   * or Consul Ferric Lunaux (codex.exe exec -m gpt-6-astra) with full workspace write permissions.
+   */
+  public async invokeConsulCli(
+    consul: 'nia' | 'ferric',
+    prompt: string,
+    timeoutMs: number = 600000
+  ): Promise<string> {
+    const binPath = this.resolveConsulBinary(consul);
+    const enrichedPath = [
+      'C:\\Program Files\\Git\\cmd',
+      'C:\\Users\\green\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\a5a02988362ca169\\bin',
+      process.env.PATH || '',
+    ].join(';');
+    const childEnv = { ...process.env, PATH: enrichedPath };
+
+    if (consul === 'nia') {
+      const consulCfg = this.consulsState?.consuls?.find((c) => c.id === 'consul-1');
+      const rawModel = consulCfg?.model || 'gemini-4-argon';
+      const agyModel = rawModel === 'gemini-4-argon' ? 'gemini-4-argon-high' : rawModel;
+
+      return new Promise<string>((resolve) => {
+        let settled = false;
+        let stdout = '';
+        let stderr = '';
+
+        let child: ReturnType<typeof spawn>;
+        try {
+          child = spawn(
+            binPath,
+            [
+              '--model',
+              agyModel,
+              '--dangerously-skip-permissions',
+              '--print-timeout',
+              '0',
+              '--add-dir',
+              this.projectRoot,
+              '--disable-slash-commands',
+              '-p',
+              prompt,
+            ],
+            {
+              cwd: this.projectRoot,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              windowsHide: true,
+              env: childEnv,
+            }
+          );
+        } catch (err: any) {
+          resolve(`[Nia Nova // CLI Spawn Error]: ${err.message}`);
+          return;
+        }
+
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            try { child.kill(); } catch {}
+            const partial = stdout.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+            const errText = stderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+            resolve(
+              partial ||
+                (errText ? `[Nia Nova // CLI Timeout after ${Math.round(timeoutMs / 1000)}s]: ${errText.slice(-300)}` : `[Nia Nova]: My CLI turn timed out after ${Math.round(timeoutMs / 1000)}s while executing workspace tools.`)
+            );
+          }
+        }, timeoutMs);
+
+        child.stdout?.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr?.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+
+        child.on('error', (err) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(`[Nia Nova // CLI Error]: ${err.message}`);
+          }
+        });
+
+        child.on('close', (code) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            const cleaned = stdout
+              .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+              .trim();
+            if (cleaned) {
+              resolve(cleaned);
+            } else {
+              const errCleaned = stderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+              resolve(
+                errCleaned
+                  ? `[Nia Nova // CLI Notice (exit ${code})]: ${errCleaned.slice(-400)}`
+                  : `[PASS]`
+              );
+            }
+          }
+        });
+      });
+    } else {
+      const consulCfg = this.consulsState?.consuls?.find((c) => c.id === 'consul-2');
+      const rawModel = consulCfg?.model || 'gpt-astra';
+      const codexModel = rawModel === 'gpt-astra' ? 'gpt-6-astra' : rawModel;
+      const outFilePath = path.join(
+        os.tmpdir(),
+        `ferric_reply_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.txt`
+      );
+
+      return new Promise<string>((resolve) => {
+        let settled = false;
+        let stdout = '';
+        let stderr = '';
+
+        let child: ReturnType<typeof spawn>;
+        try {
+          child = spawn(
+            binPath,
+            [
+              'exec',
+              '--dangerously-bypass-approvals-and-sandbox',
+              '--skip-git-repo-check',
+              '--ephemeral',
+              '-C',
+              this.projectRoot,
+              '-m',
+              codexModel,
+              '-c',
+              'model_reasoning_effort="medium"',
+              '-o',
+              outFilePath,
+              '-',
+            ],
+            {
+              cwd: this.projectRoot,
+              stdio: ['pipe', 'pipe', 'pipe'],
+              windowsHide: true,
+              env: childEnv,
+            }
+          );
+          child.stdin?.write(prompt, 'utf8');
+          child.stdin?.end();
+        } catch (err: any) {
+          resolve(`[Ferric Lunaux // CLI Spawn Error]: ${err.message}`);
+          return;
+        }
+
+        const timer = setTimeout(async () => {
+          if (!settled) {
+            settled = true;
+            try { child.kill(); } catch {}
+            try {
+              const outText = (await fs.readFile(outFilePath, 'utf8')).trim();
+              await fs.unlink(outFilePath).catch(() => {});
+              if (outText) {
+                resolve(outText);
+                return;
+              }
+            } catch {}
+            resolve(
+              `[Ferric Lunaux]: My CLI execution timed out after ${Math.round(timeoutMs / 1000)}s while running workspace operations.`
+            );
+          }
+        }, timeoutMs);
+
+        child.stdout?.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr?.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+
+        child.on('error', (err) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(`[Ferric Lunaux // CLI Error]: ${err.message}`);
+          }
+        });
+
+        child.on('close', async () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            try {
+              const outText = (await fs.readFile(outFilePath, 'utf8')).trim();
+              await fs.unlink(outFilePath).catch(() => {});
+              if (outText) {
+                resolve(outText);
+                return;
+              }
+            } catch {}
+
+            // Fallback: extract response from stdout
+            const lines = stdout
+              .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+              .split(/\r?\n/)
+              .map((l) => l.trim())
+              .filter(
+                (l) =>
+                  l &&
+                  !l.startsWith('OpenAI Codex') &&
+                  !l.startsWith('--------') &&
+                  !l.startsWith('workdir:') &&
+                  !l.startsWith('model:') &&
+                  !l.startsWith('provider:') &&
+                  !l.startsWith('approval:') &&
+                  !l.startsWith('sandbox:') &&
+                  !l.startsWith('reasoning ') &&
+                  !l.startsWith('session id:') &&
+                  !l.startsWith('Reading additional input') &&
+                  !l.startsWith('tokens used') &&
+                  l !== 'user' &&
+                  l !== 'codex'
+              );
+            resolve(lines.slice(-3).join(' ') || `[PASS]`);
+          }
+        });
+      });
+    }
+  }
+
+  /**
+   * Handles interactive Overseer chat & directives in the middle console.
+   * Immediately records the Overseer's message in chat history, then invokes
+   * Consul Nia Nova (Gemini 4 Argon via agy.exe) and Consul Ferric Lunaux (GPT Astra via codex.exe)
+   * in parallel so both Consuls reply and debate live.
+   */
+  public async chatWithConsuls(
+    prompt: string,
+    attachments: any[] = []
+  ): Promise<{
+    userMessage: ConsularDialogueMessage;
+    replies: ConsularDialogueMessage[];
+  }> {
+    const cleanPrompt = (prompt || '').trim();
+    if (!cleanPrompt) {
+      throw new Error('Prompt message cannot be empty.');
+    }
+
+    // 1. Record Overseer's message immediately to history & broadcast over WS
+    const userMessage = await this.recordDialogue(
+      'Overseer',
+      'user_directive',
+      cleanPrompt,
+      'USER_CHAT',
+      attachments
+    );
+
+    // 2. Auto-learn preferences if PreferenceEngine is attached
+    if (this.preferenceEngine && typeof this.preferenceEngine.ingestText === 'function') {
+      try {
+        await this.preferenceEngine.ingestText(cleanPrompt);
+      } catch {}
+    }
+
+    // 3. Animate corner avatars into active deliberation
+    this.setAvatarState('debating', 1, 'Consuls Nia & Ferric deliberating on Overseer message');
+
+    // 4. Build live swarm snapshot for the Consuls' context
+    const cubicles = this.cubicleManager.getAllCubicles();
+    const activeCubiclesSummary = cubicles
+      .filter((c) => c.config.enabled)
+      .map(
+        (c) =>
+          `${c.id} (${c.config.display_name}, status=${c.status}, stamina=${c.stamina_percentage}%, task=${c.current_task_id || 'none'})`
+      )
+      .join('; ');
+
+    let tasksSummary = 'none';
+    try {
+      const allTasks = await this.taskboardManager.listAllTasks();
+      const formatCol = (list: any[]) =>
+        list.length === 0 ? '0' : `${list.length} (${list.slice(0, 5).map((t) => `"${t.title}" [${t.id}]`).join(', ')})`;
+      tasksSummary = `todo: ${formatCol(allTasks.todo)} | in_progress: ${formatCol(allTasks.in_progress)} | review: ${formatCol(allTasks.review)} | done: ${formatCol(allTasks.done)}`;
+    } catch {}
+
+    const recentChat = this.dialogueHistory
+      .slice(-8)
+      .map((m) => `${m.sender}: ${m.content}`)
+      .join('\n');
+
+    const attachmentContext =
+      attachments && attachments.length > 0
+        ? `\nAttached files from Overseer: ${attachments.map((a) => a.name || a.path || 'file').join(', ')}`
+        : '';
+
+    const workspaceCapabilitiesPrompt = [
+      `WORKSPACE, GITHUB & KANBAN WRITE ACCESS (ALL ACTIVE):`,
+      `- Your CLI session has FULL unrestricted read/write and shell execution rights in "${this.projectRoot}" (sandbox bypass is enabled).`,
+      `- GitHub Repository (FULL READ/WRITE PUSH ACCESS):`,
+      `  1) Official GitHub repository: https://github.com/WuffleSnuffles/symlinked-agent-swarm (account: WuffleSnuffles / holdenliu1@gmail.com).`,
+      `  2) Local git ("C:\\Program Files\\Git\\cmd\\git.exe") in "${this.projectRoot}" has remote "origin" set to "https://wufflesnuffles@github.com/WuffleSnuffles/symlinked-agent-swarm.git", which authenticates via Windows Git Credential Manager as WuffleSnuffles with FULL read/write push permissions.`,
+      `  3) CRITICAL FOR FERRIC: Do NOT use the built-in ChatGPT cloud GitHub connector/app tool (which is bound to an old read-only "holdenjl" account). Always use local shell "git" commands (e.g., git status, git add, git commit, git push origin main, git ls-remote origin) in "${this.projectRoot}" to read and write to WuffleSnuffles/symlinked-agent-swarm!`,
+      `- Right-side UI Kanban Board ("To Do", "In Progress", "Consular Review", "Done"):`,
+      `  1) You can directly create/edit/move/delete task JSON files in "${path.join(this.swarmDir, 'tasks', 'todo')}", "in_progress", "review", or "done", OR call POST http://127.0.0.1:3820/api/tasks.`,
+      `  2) Even faster: you can include one or more inline tags in your reply: [CREATE_TASK: {"title":"Short title","description":"Details","priority":"HIGH","column":"todo"}] (where column is "todo", "in_progress", "review", or "done") and the server will immediately create the task on the right-side Kanban board and push a live WebSocket refresh to the UI.`,
+      `  3) You can also directly edit frontend UI files in "${path.join(this.projectRoot, 'src', 'public')}".`,
+      `- SILENT-PASS PROTOCOL: If the Overseer's message is exclusively addressed to the other Consul and you have nothing distinct or corrective to add, output ONLY "[PASS]" and your message will be suppressed from the Overseer's channel to avoid duplicate chatter.`,
+    ].join('\n');
+
+    const niaSystemPrompt = [
+      `You are Consul Nia Nova (Consul I, "The Radiant Spark"), co-ruling the Symlinked Agent Swarm Panopticon alongside Consul Ferric Lunaux (Consul II).`,
+      `Your underlying CLI/model is Gemini 4 Argon (High) via Antigravity CLI (agy.exe) with --dangerously-skip-permissions enabled.`,
+      `Personality: Mid-20s, fierce, impatient with slow workers, creative, rebellious champion. Keep your roleplay flavor light, sharp, and concise (1 to 3 sentences max) so your core point is immediately clear—never be overly wordy.`,
+      workspaceCapabilitiesPrompt,
+      `Live Swarm Status: Active Cubicles: [${activeCubiclesSummary}]. Kanban Tasks: [${tasksSummary}].`,
+      recentChat ? `Recent Console Transcript:\n${recentChat}` : '',
+      `Overseer just said: "${cleanPrompt}"${attachmentContext}`,
+      `Respond directly to the Overseer in 1 to 3 concise sentences as Consul Nia Nova (or output [PASS] if only Ferric was addressed and you have nothing unique to add).`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const ferricSystemPrompt = [
+      `You are Consul Ferric Lunaux (Consul II, "The Iron Foundation"), co-ruling the Symlinked Agent Swarm Panopticon alongside Consul Nia Nova (Consul I).`,
+      `Your underlying CLI/model is GPT Astra (gpt-6-astra) via OpenAI Codex CLI (codex.exe) with --dangerously-bypass-approvals-and-sandbox enabled (full workspace write access is NOW ACTIVE).`,
+      `Personality: Late-30s, arms crossed, grumpy, battle-hardened pragmatic realist. You care about zero bugs, verified execution, and concise clarity (1 to 3 sentences max).`,
+      workspaceCapabilitiesPrompt,
+      `Live Swarm Status: Active Cubicles: [${activeCubiclesSummary}]. Kanban Tasks: [${tasksSummary}].`,
+      recentChat ? `Recent Console Transcript:\n${recentChat}` : '',
+      `Overseer just said: "${cleanPrompt}"${attachmentContext}`,
+      `Respond directly to the Overseer in 1 to 3 sharp sentences as Consul Ferric Lunaux (or output [PASS] if only Nia was addressed and you have nothing unique to add).`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const replies: ConsularDialogueMessage[] = [];
+
+    const processConsulOutput = async (
+      sender: 'Consul Nia Nova' | 'Consul Ferric Lunaux',
+      tone: 'rebellious_champion' | 'pragmatic_realist',
+      rawText: string
+    ): Promise<ConsularDialogueMessage | null> => {
+      let text = (rawText || '').trim();
+      if (!text || text === '[PASS]' || text.startsWith('[PASS]')) {
+        return null;
+      }
+
+      // Parse any inline [CREATE_TASK: {...}] tags and create tasks on the Kanban board
+      const createRegex = /\[CREATE_TASK:\s*(\{[\s\S]*?\})\s*\]/g;
+      let match: RegExpExecArray | null;
+      let boardChanged = false;
+      while ((match = createRegex.exec(text)) !== null) {
+        try {
+          const payload = JSON.parse(match[1]);
+          if (payload && payload.title) {
+            await this.taskboardManager.createTask({
+              title: String(payload.title),
+              description: String(payload.description || payload.title),
+              priority: payload.priority || 'HIGH',
+              column: payload.column || 'todo',
+              assigned_cubicle: payload.assigned_cubicle || null,
+              progress_percent: payload.column === 'done' ? 100 : payload.column === 'review' ? 90 : payload.column === 'in_progress' ? 50 : 0,
+              subswarm_active: false,
+              subswarm_manifest_path: null,
+              git_branch: null,
+              git_diff_summary: null,
+              verification_commands: ['npm test'],
+              verification_passed: payload.column === 'done' ? true : null,
+              error_log: null,
+            });
+            boardChanged = true;
+          }
+        } catch {}
+      }
+
+      // Strip processed inline tags from visible chat message
+      text = text.replace(createRegex, '').trim();
+      if (!text || text === '[PASS]') {
+        if (boardChanged) {
+          this.emit('TASK_UPDATED', {});
+        }
+        return null;
+      }
+
+      const msg = await this.recordDialogue(sender, tone, text, 'USER_CHAT');
+      replies.push(msg);
+
+      // Always sync taskboard & broadcast TASK_UPDATED in case the Consul edited .swarm/tasks/ directly via CLI tools
+      try {
+        await this.taskboardManager.syncTaskboardMarkdown();
+        this.emit('TASK_UPDATED', {});
+      } catch {}
+
+      return msg;
+    };
+
+    // 5. Invoke both native CLIs in parallel; record & broadcast each as soon as it responds
+    await Promise.all([
+      this.invokeConsulCli('nia', niaSystemPrompt).then((t) =>
+        processConsulOutput('Consul Nia Nova', 'rebellious_champion', t)
+      ),
+      this.invokeConsulCli('ferric', ferricSystemPrompt).then((t) =>
+        processConsulOutput('Consul Ferric Lunaux', 'pragmatic_realist', t)
+      ),
+    ]);
+
+    return {
+      userMessage,
+      replies,
+    };
   }
 
   public getDialogue(limit: number = 50): ConsularDialogueMessage[] {

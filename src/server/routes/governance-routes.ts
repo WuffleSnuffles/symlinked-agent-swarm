@@ -100,6 +100,21 @@ export function createGovernanceRouter(
     }
   });
 
+  router.post('/governance/chat', async (req: Request, res: Response) => {
+    try {
+      const { prompt, goal, attachments } = req.body;
+      const text = (prompt || goal || '').trim();
+      if (!text) {
+        res.status(400).json({ error: 'prompt is required.' });
+        return;
+      }
+      const result = await consularEngine.chatWithConsuls(text, attachments || []);
+      res.status(201).json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   router.get('/governance/growth', (_req: Request, res: Response) => {
     try {
       res.json({

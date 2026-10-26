@@ -65,11 +65,12 @@ export interface DualConsulState {
 
 export interface ConsularDialogueMessage {
   id: string;
-  sender: 'Consul Nia Nova' | 'Consul Ferric Lunaux' | 'Consul I' | 'Consul II';
-  tone: 'rebellious_champion' | 'pragmatic_realist';
+  sender: 'Consul Nia Nova' | 'Consul Ferric Lunaux' | 'Consul I' | 'Consul II' | 'Overseer' | 'User';
+  tone: 'rebellious_champion' | 'pragmatic_realist' | 'user_directive';
   content: string;
-  phase: 'PLANNING_GATE' | 'REVIEW_GATE' | 'DISCIPLINE' | 'GENERAL';
+  phase: 'PLANNING_GATE' | 'REVIEW_GATE' | 'DISCIPLINE' | 'GENERAL' | 'USER_CHAT';
   timestamp: string;
+  attachments?: any[];
 }
 
 export interface ConsularPlanGate {

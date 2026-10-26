@@ -12,7 +12,7 @@
     "thinking_level": "High",
     "thinking_budget_tokens": 16000,
     "can_spawn_subswarm": true,
-    "cli_template": "gemini run --model {{model}} --thinking-budget {{thinking_budget}} --input-file \"{{prompt_file}}\" --dir \"{{worktree_dir}}\"",
+    "cli_template": "\"C:\\\\Users\\\\green\\\\.gemini\\\\bin\\\\agy.exe\" --model gemini-4-argon-high --dangerously-skip-permissions --print-timeout 0 --disable-slash-commands -w \"{{worktree_dir}}\" -p \"{{prompt}}\"",
     "api_key_env_var": "GEMINI_API_KEY",
     "quota": {
       "max_tokens": 2000000,
@@ -30,7 +30,7 @@
   "stamina_percentage": 100,
   "fatigue_percentage": 0,
   "stamina_tier": "energized",
-  "last_heartbeat": "2026-10-26T08:59:12.395Z",
+  "last_heartbeat": "2026-10-26T19:09:42.011Z",
   "worktree_path": "H:\\My Drive\\Gemini Antigravity\\scratch\\symlinked_agent_swarm\\worktrees\\cubicle-01",
   "branch_name": "swarm/cubicle-01",
   "process_pid": null,

@@ -24,7 +24,7 @@ export const DEFAULT_CUBICLE_ROSTER: CubicleConfig[] = [
     thinking_level: 'High',
     thinking_budget_tokens: 16000,
     can_spawn_subswarm: true,
-    cli_template: 'gemini run --model {{model}} --thinking-budget {{thinking_budget}} --input-file "{{prompt_file}}" --dir "{{worktree_dir}}"',
+    cli_template: '"C:\\Users\\green\\.gemini\\bin\\agy.exe" --model gemini-4-argon-high --dangerously-skip-permissions --print-timeout 0 --disable-slash-commands -w "{{worktree_dir}}" -p "{{prompt}}"',
     api_key_env_var: 'GEMINI_API_KEY',
     quota: {
       max_tokens: 2000000,
@@ -47,7 +47,7 @@ export const DEFAULT_CUBICLE_ROSTER: CubicleConfig[] = [
     thinking_level: 'High',
     thinking_budget_tokens: 16000,
     can_spawn_subswarm: true,
-    cli_template: 'gemini run --model {{model}} --thinking-budget {{thinking_budget}} --input-file "{{prompt_file}}" --dir "{{worktree_dir}}"',
+    cli_template: '"C:\\Users\\green\\.gemini\\bin\\agy.exe" --model gemini-4-argon-high --dangerously-skip-permissions --print-timeout 0 --disable-slash-commands -w "{{worktree_dir}}" -p "{{prompt}}"',
     api_key_env_var: 'GEMINI_API_KEY',
     quota: {
       max_tokens: 2000000,
@@ -70,7 +70,7 @@ export const DEFAULT_CUBICLE_ROSTER: CubicleConfig[] = [
     thinking_level: 'Very High',
     thinking_budget_tokens: 32000,
     can_spawn_subswarm: false, // MANDATORY: Restricted solo worker!
-    cli_template: 'openai api chat.completions.create --model {{model}} --input "{{prompt}}" --workdir "{{worktree_dir}}"',
+    cli_template: '"C:\\Users\\green\\AppData\\Local\\OpenAI\\Codex\\bin\\e78bad9887fa50cf\\codex.exe" exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -m gpt-6-astra -C "{{worktree_dir}}" "{{prompt}}"',
     api_key_env_var: 'OPENAI_API_KEY',
     quota: {
       max_tokens: 1500000,

@@ -1,0 +1,22 @@
+{
+  "title": "Rich console visuals",
+  "description": "Enable agents to generate and display images, workflow flowcharts, and readable tables directly in console chat; verify rendering end to end.",
+  "priority": "HIGH",
+  "column": "todo",
+  "assigned_cubicle": null,
+  "progress_percent": 0,
+  "subswarm_active": false,
+  "subswarm_manifest_path": null,
+  "git_branch": null,
+  "git_diff_summary": null,
+  "verification_commands": [
+    "npm test"
+  ],
+  "verification_passed": null,
+  "error_log": null,
+  "id": "task-mvpn06hh-i439",
+  "created_at": "2026-10-26T19:15:56.501Z",
+  "claimed_at": null,
+  "completed_at": null,
+  "veto_history": []
+}

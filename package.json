@@ -23,7 +23,11 @@
     "subswarms",
     "consular-governance"
   ],
-  "author": "holdenliu1",
+  "author": "WuffleSnuffles (holdenliu1@gmail.com)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WuffleSnuffles/symlinked-agent-swarm.git"
+  },
   "license": "MIT",
   "dependencies": {
     "express": "^4.19.2",
