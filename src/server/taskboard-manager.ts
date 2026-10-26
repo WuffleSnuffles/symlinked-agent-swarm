@@ -82,11 +82,8 @@ export class TaskboardManager {
    * Creates a new task and writes it to .swarm/tasks/todo/<id>.json.
    */
   public async createTask(
-    params: Omit<SwarmTask, 'id' | 'created_at' | 'claimed_at' | 'completed_at' | 'column' | 'veto_history'> & {
-      id?: string;
-      column?: TaskColumn;
-      assigned_cubicle?: string | null;
-    }
+    params: Pick<SwarmTask, 'title' | 'description' | 'priority'> &
+      Partial<Omit<SwarmTask, 'title' | 'description' | 'priority' | 'created_at' | 'claimed_at' | 'completed_at' | 'veto_history'>>
   ): Promise<SwarmTask> {
     if (!params.id && params.description?.startsWith('Spawned under approved plan ')) {
       const existingTodo = await this.listTasksByColumn('todo');

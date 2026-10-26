@@ -429,7 +429,7 @@ export class ConsularEngine {
     sender: 'Consul Nia Nova' | 'Consul Ferric Lunaux' | 'Consul I' | 'Consul II' | 'Overseer' | 'User',
     tone: 'rebellious_champion' | 'pragmatic_realist' | 'user_directive',
     content: string,
-    phase: 'PLANNING_GATE' | 'REVIEW_GATE' | 'DISCIPLINE' | 'GENERAL' | 'USER_CHAT' = 'GENERAL',
+    phase: ConsularDialogueMessage['phase'] = 'GENERAL',
     attachments?: any[]
   ): Promise<ConsularDialogueMessage> {
     const message: ConsularDialogueMessage = {

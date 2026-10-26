@@ -68,7 +68,7 @@ export interface ConsularDialogueMessage {
   sender: 'Consul Nia Nova' | 'Consul Ferric Lunaux' | 'Consul I' | 'Consul II' | 'Overseer' | 'User';
   tone: 'rebellious_champion' | 'pragmatic_realist' | 'user_directive';
   content: string;
-  phase: 'PLANNING_GATE' | 'REVIEW_GATE' | 'DISCIPLINE' | 'GENERAL' | 'USER_CHAT';
+  phase: 'PLANNING_GATE' | 'REVIEW_GATE' | 'DELIBERATION' | 'DISCIPLINE' | 'GENERAL' | 'USER_CHAT';
   timestamp: string;
   attachments?: any[];
 }

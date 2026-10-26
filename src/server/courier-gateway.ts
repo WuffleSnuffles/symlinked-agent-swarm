@@ -131,7 +131,8 @@ export class CourierGateway {
         for (const file of files.filter((f) => f.endsWith('.json'))) {
           const raw = await fs.readFile(path.join(this.petitionsDir, file), 'utf8');
           const pet: CourierPetition = JSON.parse(raw);
-          this.petitions.set(pet.id, pet);
+          const petitionId = pet.petition_id || pet.id;
+          if (petitionId) this.petitions.set(petitionId, pet);
         }
       } catch {}
     }
@@ -327,7 +328,7 @@ export class CourierGateway {
     const consensus = this.consularEngine.evaluateConsensus(votes[0], votes[1], taskId);
 
     if (consensus.unanimous_approved) {
-      if (taskId && petition.status !== 'SWARM_EXECUTING') {
+      if (taskId && this.taskboardManager.getTask(taskId)?.column === 'review') {
         try {
           await this.taskboardManager.completeTask(taskId);
         } catch {}

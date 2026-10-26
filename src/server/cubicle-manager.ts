@@ -46,7 +46,7 @@ export class CubicleManager {
 
   // Deterministic valid transition matrix
   private static readonly VALID_TRANSITIONS: Record<CubicleStatus, CubicleStatus[]> = {
-    vacant: ['idle', 'working'],
+    vacant: ['idle'],
     idle: ['working', 'vacant', 'error'],
     working: ['under_inspection', 'idle', 'error', 'exhausted'],
     under_inspection: ['idle', 'working', 'error'],
