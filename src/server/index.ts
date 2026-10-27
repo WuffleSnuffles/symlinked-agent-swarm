@@ -27,6 +27,7 @@ import { createFilesystemRouter } from './routes/filesystem-routes.js';
 import { ensureAvatarAssets } from './avatar-assets.js';
 import { parseCliArgs, executeCliCommand } from './cli-dispatcher.js';
 import { startConsularProgressUpdates } from './progress-updates.js';
+import { createOpenRigRouter } from '../openrig-port/index.js';
 
 export interface SwarmServerInstance {
   app: express.Express;
@@ -84,6 +85,7 @@ export async function createSwarmServer(
   await preferenceEngine.initialize();
   await skillMcpManager.initialize();
   await courierGateway.initialize();
+  await consularEngine.openrig.runCrashCartFleetRestore(cubicleManager, taskboardManager);
 
   // Ensure high-resolution avatar assets exist
   ensureAvatarAssets(repoRoot);
@@ -156,6 +158,7 @@ export async function createSwarmServer(
   app.use('/api', createMediaRouter(repoRoot));
   app.use('/api', createFilesystemRouter(repoRoot));
   app.use('/api', createCubicleMessageRouter(path.join(swarmDir, 'messages'), cubicleManager, broadcast));
+  app.use('/api', createOpenRigRouter(consularEngine.openrig, cubicleManager, taskboardManager));
 
   // SPA Fallback for Panopticon SPA (including ?panel=cubicles, ?panel=console, ?panel=taskboard)
   app.get('/', (_req: Request, res: Response) => {
@@ -193,6 +196,18 @@ export async function createSwarmServer(
         mode: 'ROMAN_DUAL_CONSUL',
         consuls: ['Consul I', 'Consul II'],
         named_consuls: ['Consul Nia Nova', 'Consul Ferric Lunaux'],
+      },
+      openrig: {
+        engine: 'openrig-panopticon-v1',
+        subsystems_active: 6,
+        subsystems: [
+          'SeatLifecycleEngine',
+          'SeatActivityEngine',
+          'HealthProjectionEngine',
+          'OpenRigStreamClassifier',
+          'SeatRecapStore',
+          'CrashCartConductor',
+        ],
       },
       timestamp: new Date().toISOString(),
     });

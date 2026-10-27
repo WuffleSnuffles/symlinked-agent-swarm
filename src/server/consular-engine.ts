@@ -54,6 +54,7 @@ import {
 } from './cli-heartbeat.js';
 import { SelfUpdateManager } from './self-update-manager.js';
 import { PreferenceEngine } from './preference-engine.js';
+import { OpenRigRuntimeHub, readSeatRecap } from '../openrig-port/index.js';
 
 // Keep this predicate aligned with the server/browser copy; regression tests cover both.
 function isConsularCliNoise(rawText: string): boolean {
@@ -101,6 +102,7 @@ export class ConsularEngine {
   private unsubscribePreferences?: () => void;
   private growthWriteQueue: Promise<void> = Promise.resolve();
   private selfUpdateManager: SelfUpdateManager;
+  public readonly openrig: OpenRigRuntimeHub;
   private eventListeners: Set<ConsularEventCallback> = new Set();
   private typedListeners: Map<string, Map<(payload: any) => void, ConsularEventCallback>> = new Map();
 
@@ -147,6 +149,10 @@ export class ConsularEngine {
     this.capabilityMatrix = capabilityMatrix;
     this.worktreeManager = worktreeManager ?? new WorktreeManager(this.projectRoot);
     this.selfUpdateManager = new SelfUpdateManager(this.projectRoot);
+    this.openrig = new OpenRigRuntimeHub({
+      swarmDir: this.swarmDir,
+      projectRoot: this.projectRoot,
+    });
     if (typeof this.taskboardManager?.onTaskCreated === 'function') {
       this.taskboardManager.onTaskCreated(async (task) => {
         await this.recordLiveEvolution(`Task created: ${task.title}`);
@@ -535,6 +541,17 @@ export class ConsularEngine {
       await fs.appendFile(this.dialogueLogPath, JSON.stringify(message) + '\n', 'utf8');
     } catch {}
 
+    try {
+      this.openrig.classifier.ingestStreamItem({
+        id: message.id,
+        sender: message.sender,
+        content: message.content,
+        phase: message.phase,
+        createdAt: message.timestamp,
+      });
+      void this.openrig.classifier.wake();
+    } catch {}
+
     const isUser = sender === 'Overseer' || sender === 'User';
     if (isUser) {
       this.debateTurnsCount = 0;
@@ -644,7 +661,21 @@ export class ConsularEngine {
       'C:\\Users\\green\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\a5a02988362ca169\\bin',
       process.env.PATH || '',
     ].join(';');
-    const childEnv = { ...process.env, PATH: enrichedPath };
+    const wtMatch = /worktrees[\\/](cubicle-\d{2})/i.exec(workingDirectory);
+    const seatId = wtMatch ? wtMatch[1].toLowerCase() : consul === 'nia' ? 'consul-1' : 'consul-2';
+    const occupation = this.openrig.beginSeatOccupation({
+      seatId,
+      runtime: consul === 'nia' ? 'agy' : 'codex',
+      model: consul === 'nia' ? 'gemini-4-argon-high' : 'gpt-6-astra',
+      cwd: workingDirectory,
+    });
+    const childEnv = { ...process.env, ...occupation.env, PATH: enrichedPath };
+    const finishSeatOccupation = () => {
+      try {
+        this.openrig.reportSeatIdle(seatId, 'lifecycle-hooks', `${seatId}:exit`);
+        this.openrig.lifecycle.stopSeat(seatId, occupation.occupantGeneration);
+      } catch {}
+    };
     const startedAt = Date.now();
     let lastOutputAt = startedAt;
     const timeoutDetail = (pid: number | undefined) =>
@@ -727,10 +758,12 @@ export class ConsularEngine {
           return;
         }
 
+        this.openrig.lifecycle.bindPid(seatId, occupation.occupantGeneration, child.pid ?? null);
         const heartbeat = attachChildActivityHeartbeat(child, {
           idleTimeoutMs: timeoutMs,
           onActivity: (str, stream) => {
             lastOutputAt = Date.now();
+            this.openrig.reportSeatWorking(seatId, 'self-report', `${seatId}:${stream}`);
             if (stream === 'stdout') {
               stdout += str;
             } else {
@@ -741,6 +774,7 @@ export class ConsularEngine {
           onTimeout: async (info) => {
             if (!settled) {
               settled = true;
+              finishSeatOccupation();
               const cleanup = await this.killProcessTree(child);
               const partial = stdout.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
               const errText = stderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
@@ -761,6 +795,7 @@ export class ConsularEngine {
           if (!settled) {
             settled = true;
             heartbeat.clear();
+            finishSeatOccupation();
             resolve(`[Nia Nova // CLI Error]: ${err.message}`);
           }
         });
@@ -769,6 +804,7 @@ export class ConsularEngine {
           if (!settled) {
             settled = true;
             heartbeat.clear();
+            finishSeatOccupation();
             const cleaned = stdout
               .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
               .trim();
@@ -835,10 +871,12 @@ export class ConsularEngine {
           return;
         }
 
+        this.openrig.lifecycle.bindPid(seatId, occupation.occupantGeneration, child.pid ?? null);
         const heartbeat = attachChildActivityHeartbeat(child, {
           idleTimeoutMs: timeoutMs,
           onActivity: (str, stream) => {
             lastOutputAt = Date.now();
+            this.openrig.reportSeatWorking(seatId, 'self-report', `${seatId}:${stream}`);
             if (stream === 'stdout') {
               stdout += str;
             } else {
@@ -849,6 +887,7 @@ export class ConsularEngine {
           onTimeout: async (info) => {
             if (!settled) {
               settled = true;
+              finishSeatOccupation();
               const cleanup = await this.killProcessTree(child);
               // A last-message file is not proof of successful process completion.
               await fs.unlink(outFilePath).catch(() => {});
@@ -870,6 +909,7 @@ export class ConsularEngine {
           if (!settled) {
             settled = true;
             heartbeat.clear();
+            finishSeatOccupation();
             resolve(`[Ferric Lunaux // CLI Error]: ${err.message}`);
           }
         });
@@ -878,6 +918,7 @@ export class ConsularEngine {
           if (!settled) {
             settled = true;
             heartbeat.clear();
+            finishSeatOccupation();
             if (code !== 0) {
               await fs.unlink(outFilePath).catch(() => {});
               resolve(`[Ferric Lunaux // CLI Error (exit ${code})]: ${(stderr || stdout).slice(-400) || 'No diagnostics; inspect CLI configuration and retry.'}`);
@@ -1821,9 +1862,17 @@ export class ConsularEngine {
       const workerIsAstra =
         (cubicle.config.brand || '').toLowerCase().includes('gpt') ||
         (cubicle.config.model || '').toLowerCase().includes('astra');
+      let predecessorRecapBlock = '';
+      try {
+        const recap = readSeatRecap(worktree.worktreePath);
+        if (recap.exists && recap.content) {
+          predecessorRecapBlock = `<openrig_predecessor_recap>\n${recap.content.slice(0, 1200)}\n</openrig_predecessor_recap>`;
+        }
+      } catch {}
       const workerPrompt = [
-        `You are Worker Agent ${targetCubicleId} (${cubicle.config.display_name}) inside the Symlinked Agent Swarm.`,
+        `You are Worker Agent ${targetCubicleId} (${cubicle.config.display_name}) inside the Symlinked Agent Swarm (OpenRig Runtime Engine).`,
         this.learnedContext(),
+        predecessorRecapBlock,
         `You have been dispatched by Consuls Nia Nova and Ferric Lunaux to execute Kanban Task [${task.id}]: "${task.title}".`,
         `Task Description: ${task.description}`,
         `Workspace Root: "${worktree.worktreePath}"`,
@@ -1938,6 +1987,20 @@ export class ConsularEngine {
             .replace(/\s+/g, ' ')
             .trim()
             .slice(0, 180);
+
+          try {
+            const seatRecord = this.openrig.lifecycle.getSeat(targetCubicleId);
+            this.openrig.writeCubicleRecap({
+              cubicleId: targetCubicleId,
+              worktreePath: worktree.worktreePath,
+              occupantGeneration: seatRecord?.occupantGeneration ?? 'gen-completed',
+              taskId: task.id,
+              taskTitle: task.title,
+              verificationPassed: true,
+              filesChanged: fileScope,
+              summary: summarySnippet,
+            });
+          } catch {}
 
           await this.cubicleManager.recordTokenConsumption(targetCubicleId, 6500, 0.04);
           await this.cubicleManager.updateSurfaceThoughts(

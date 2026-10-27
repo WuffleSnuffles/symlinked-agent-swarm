@@ -1,34 +1,28 @@
-# OpenRig Migration & Baseline Verification Report
+# OpenRig Panopticon Full Runtime Migration Report
 
-**Tasks Covered**:
-- `[task-mvpvlb6t-41lp]` — Port Panopticon Consular Governance and UI into OpenRig workspace
-- `[task-mvppumvy-0scc]` — Gate 2: OpenRig migration evidence gaps and baseline failures
-- `[task-mvptc9d2-u3g0]` — Audit OpenRig daemon seat lifecycle, stream classifier, and crash-cart architecture
-- `[task-mvpqb54l-tl2m]` — Replace fixed CLI timeout with activity-heartbeat timer & lightweight worker verification
+## 1. Overview
+All 6 core OpenRig baseline subsystems have been ported into [`src/openrig-port/`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/openrig-port/index.ts) and wired directly into the live Panopticon server ([`src/server/consular-engine.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/server/consular-engine.ts), [`src/server/index.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/server/index.ts)) as well as the OpenRig monorepo workspace ([`H:\My Drive\Gemini Antigravity\scratch\openrig_panopticon`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/openrig_panopticon)).
 
-## 1. Baseline Failures Resolved
+## 2. Ported OpenRig Baseline Subsystems (`src/openrig-port/`)
+1. **Seat Lifecycle & Generation Fencing ([`seat-lifecycle.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/openrig-port/seat-lifecycle.ts)):**
+   - Allocates a fresh `occupantGeneration` UUID on every Consul and Worker Cubicle CLI invocation (`OPENRIG_OCCUPANT_GENERATION`, `OPENRIG_RIG=panopticon`, `OPENRIG_SEAT`).
+   - Serializes per-seat transitions via `DeliveryGuard` and implements 3-state liveness probing (`'present' | 'absent' | 'transport_unavailable'`, never mutating to `'stopped'` on `'transport_unavailable'`).
+2. **4-Rung Ranked Activity Evidence Ladder ([`seat-activity.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/openrig-port/seat-activity.ts)):**
+   - Arbitrates seat activity (`working | idle-at-prompt | unknown`) across `self-report` → `lifecycle-hooks` → `needs-input-chrome` → `window-sampling`.
+   - Enforces the 2-tick idle debounce (`SAMPLING_IDLE_DEBOUNCE_TICKS = 2`) and cross-rung contradiction detection (`CROSS_RUNG_CONTRADICTION_WINDOW_MS = 5000`).
+3. **6-Detector Health Projection Engine ([`health-detectors.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/openrig-port/health-detectors.ts)):**
+   - Evaluates `process.ceremony-amplification`, `process.review-carousel`, `process.redundant-wake-storm`, `governance.stale-directive`, `governance.scope-admission-drift`, and `context.pressure` (`95%` warning / `99%` critical) under the `openrig.health-list/v0alpha1` schema.
+4. **Wake-Driven Lease-Fenced Stream Classifier ([`stream-classifier.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/openrig-port/stream-classifier.ts)):**
+   - Coalesces stream notifications via `O(1)` boolean hint (`notify()`), fences single-owner leases, and bounds per-item classification with `Promise.race` + `AbortController` capped by lease heartbeat.
+5. **Markdown-Addressable Seat Recap Store ([`seat-recap-store.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/openrig-port/seat-recap-store.ts) & [`markdown-address.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/openrig-port/markdown-address.ts)):**
+   - Validates `RECAP.md` H2/H3 addressability (`name#H2-slug/H3-slug`), rejects symlink escapes via `lstatSync`, rotates predecessors into `recap-superseded/`, and injects predecessor recaps into worker dispatch prompts.
+6. **Crash-Cart C3/C2/B1 & Amendment 2 Live Adoption ([`crash-cart.ts`](file:///H:/My%20Drive/Gemini%20Antigravity/scratch/symlinked_agent_swarm/src/openrig-port/crash-cart.ts)):**
+   - Implements positive-predicate `'down'` detection (timeouts never promote to `'down'`), copy-then-read discovery, and `RestoreConductor` with kernel-first ordering and Amendment 2 live-pane adoption.
 
-1. **Panopticon TypeScript Build (`tsc --noEmit`)**:
-   - **Previous State**: Failed with 6 TypeScript diagnostics across `src/server/consular-engine.ts` and `src/server/courier-gateway.ts`.
-   - **Resolution**: Added `'DELIBERATION'` to `ConsularDialogueMessage['phase']` in `src/server/types/governance.ts`, updated `TaskboardManager.createTask()` parameter typing in `src/server/taskboard-manager.ts`, and fixed `CourierPetition` status/ID narrowing in `src/server/courier-gateway.ts`.
-   - **Verification**: `node node_modules/typescript/bin/tsc --noEmit` exits `0` with zero diagnostics.
-
-2. **OpenRig Windows Docs-Guard Test (`scripts/check-docs-guard.test.mjs`)**:
-   - **Previous State**: `node --test scripts/check-docs-guard.test.mjs` failed 1 of 6 tests (`the real tracked-path reader preserves unusual documentation filenames`) on Windows NTFS due to `< 0x20` control characters (`\n`, `\t`) in test fixture filenames and `file://` URL comparison in `scripts/check-docs-guard.mjs`.
-   - **Resolution**: Updated `scripts/check-docs-guard.mjs` to use `pathToFileURL(process.argv[1]).href` and updated `scripts/check-docs-guard.test.mjs` to use platform-appropriate unusual UTF-8 filenames on `win32`.
-   - **Verification**: `node --test scripts/check-docs-guard.test.mjs` passes **6/6 tests** (`pass 6, fail 0`, exit `0`).
-
-3. **OpenRig Repository Remote Push (`origin/main`)**:
-   - **Previous State**: `git -C "H:\My Drive\Gemini Antigravity\scratch\openrig_panopticon" ls-remote --exit-code origin refs/heads/main` returned exit code `2` because `main` had not been pushed to `https://github.com/WuffleSnuffles/openrig-panopticon.git`.
-   - **Resolution**: Committed the ported Consular Governance daemon routes (`packages/daemon/src/routes/consular-governance.ts`), UI component (`packages/ui/src/components/ConsularPanopticonPanel.tsx`), and Windows docs-guard fixes to `main` and pushed `refs/heads/main` to `origin`.
-   - **Verification**: `git -C "H:\My Drive\Gemini Antigravity\scratch\openrig_panopticon" ls-remote --exit-code origin refs/heads/main` exits `0`.
-
-## 2. Ported Architecture & Modules
-
-- **OpenRig Workspace (`H:\My Drive\Gemini Antigravity\scratch\openrig_panopticon`)**:
-  - `packages/daemon/src/routes/consular-governance.ts` (mounted at `/api/governance` in `packages/daemon/src/server.ts`)
-  - `packages/ui/src/components/ConsularPanopticonPanel.tsx`
-- **Panopticon Workspace (`H:\My Drive\Gemini Antigravity\scratch\symlinked_agent_swarm`)**:
-  - `src/openrig-port/index.ts` & `test/unit/openrig-port.test.ts`
-  - `src/server/cli-heartbeat.ts` & `test/unit/cli-heartbeat.test.ts`
-  - `docs/openrig-daemon-audit.md`
+## 3. Live API Endpoints (`http://localhost:3820`)
+- `GET /api/openrig/status` — Complete 6-subsystem OpenRig runtime overview.
+- `GET /api/openrig/seats` & `GET /api/openrig/activity` — Live occupant generations and 4-rung evidence ladder states.
+- `GET /api/openrig/health` — Live `openrig.health-list/v0alpha1` 6-detector projection.
+- `GET /api/openrig/recap/:seatId` & `POST /api/openrig/recap/:seatId` — Addressable `RECAP.md` handover store.
+- `GET /api/openrig/stream-classifier` & `POST /api/openrig/stream-classifier/wake` — Stream classification worker status & wake trigger.
+- `GET /api/crash-cart/detect`, `GET /api/crash-cart/discovery`, `POST /api/crash-cart/restore-fleet` (`HTTP 202 Accepted`).
