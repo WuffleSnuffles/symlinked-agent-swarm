@@ -15,6 +15,7 @@ import { CapabilityMatrix } from './capability-matrix.js';
 import { SubswarmManager } from './subswarm-manager.js';
 import { WorktreeManager } from './worktree-manager.js';
 import { TaskboardManager } from './taskboard-manager.js';
+import { createTaskArchiveRouter, startTaskArchiveRefresh } from './task-archive.js';
 import { ConsularEngine } from './consular-engine.js';
 import { PreferenceEngine } from './preference-engine.js';
 import { SkillMcpManager } from './mcp-generator.js';
@@ -25,6 +26,7 @@ import { createMediaRouter } from './routes/media-routes.js';
 import { createFilesystemRouter } from './routes/filesystem-routes.js';
 import { ensureAvatarAssets } from './avatar-assets.js';
 import { parseCliArgs, executeCliCommand } from './cli-dispatcher.js';
+import { startConsularProgressUpdates } from './progress-updates.js';
 
 export interface SwarmServerInstance {
   app: express.Express;
@@ -87,7 +89,7 @@ export async function createSwarmServer(
   ensureAvatarAssets(repoRoot);
 
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '20mb' }));
 
   // CORS headers
   app.use((_req, res, next) => {
@@ -124,6 +126,7 @@ export async function createSwarmServer(
   };
 
   // Wire manager events to WebSocket broadcast
+  taskboardManager.onTaskUpdated(task => broadcast('TASK_UPDATED', { task }));
   cubicleManager.onStateChange((cubicle, reason) => {
     broadcast('CUBICLE_UPDATED', { cubicle, reason });
   });
@@ -247,7 +250,38 @@ export async function createSwarmServer(
     }
   });
 
+  const stopTaskArchiveRefresh = startTaskArchiveRefresh(taskboardManager, broadcast);
+  const progressUpdater = startConsularProgressUpdates(
+    consularEngine,
+    taskboardManager,
+    cubicleManager,
+    broadcast,
+    {
+      emitDialogueOnTransitions: false,
+      emitDialogueOnStalled: false,
+      periodicReportIntervalMs: 10 * 60 * 1000,
+    }
+  );
+  app.use('/api', createTaskArchiveRouter(taskboardManager));
+
+  app.get('/api/swarm/activity', async (_req: Request, res: Response) => {
+    try {
+      const activity = await progressUpdater.computeSnapshot();
+      res.json({ activity });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Taskboard Routes
+  app.post('/api/tasks/:id/progress', async (req: Request, res: Response) => {
+    try {
+      const task = await taskboardManager.updateTaskProgress(req.params.id, req.body);
+      res.json({ task });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
   app.get('/api/tasks', async (_req: Request, res: Response) => {
     try {
       const tasks = await taskboardManager.listAllTasks();
@@ -289,13 +323,15 @@ export async function createSwarmServer(
         res.status(404).json({ message: 'No available tasks to claim or race lost' });
         return;
       }
-      const claimedCubicle = cubicleManager.getCubicle(cubicleId);
-      claimedCubicle.current_task_id = task.id;
-      await cubicleManager.transitionStatus(
-        cubicleId,
-        'working',
-        `Active [${task.id}]: ${task.title}`
-      );
+      if (/^cubicle-\d{2}$/.test(String(cubicleId))) {
+        const claimedCubicle = cubicleManager.getCubicle(cubicleId);
+        claimedCubicle.current_task_id = task.id;
+        await cubicleManager.transitionStatus(
+          cubicleId,
+          'working',
+          `Active [${task.id}]: ${task.title}`
+        );
+      }
       broadcast('TASK_CLAIMED', { task, cubicleId });
       res.json({ task });
     } catch (err: any) {
@@ -323,7 +359,7 @@ export async function createSwarmServer(
   app.post('/api/tasks/:id/review', async (req: Request, res: Response) => {
     try {
       const task = await taskboardManager.submitForReview(req.params.id, req.body);
-      if (task.assigned_cubicle) {
+      if (task.assigned_cubicle && /^cubicle-\d{2}$/.test(String(task.assigned_cubicle))) {
         await cubicleManager.transitionStatus(
           task.assigned_cubicle,
           'under_inspection',
@@ -340,7 +376,7 @@ export async function createSwarmServer(
   app.post('/api/tasks/:id/complete', async (req: Request, res: Response) => {
     try {
       const task = await taskboardManager.completeTask(req.params.id);
-      if (task.assigned_cubicle) {
+      if (task.assigned_cubicle && /^cubicle-\d{2}$/.test(String(task.assigned_cubicle))) {
         await cubicleManager.transitionStatus(
           task.assigned_cubicle,
           'idle',
@@ -418,6 +454,8 @@ export async function createSwarmServer(
 
   // Close helper
   const close = async (): Promise<void> => {
+    stopTaskArchiveRefresh();
+    progressUpdater.stop();
     return new Promise((resolve) => {
       for (const client of wss.clients) {
         try {
@@ -467,7 +505,25 @@ if (isDirectEntry) {
     if (result.handled) {
       return;
     }
-    createSwarmServer(cliArgs.workspace, cliArgs.port).then(({ port, server }) => {
+    createSwarmServer(cliArgs.workspace, cliArgs.port).then(({ port, server, wss }) => {
+      const onAddrInUse = (err: any) => {
+        if (err && err.code === 'EADDRINUSE') {
+          console.log(`[PANOPTICON] Swarm Server is already active on http://localhost:${port}`);
+          if (!cliArgs.headless && process.platform === 'win32' && !process.env.VITEST) {
+            console.log(`[PANOPTICON] Opening Panopticon UI at http://localhost:${port}...`);
+            import('node:child_process')
+              .then(({ exec }) => {
+                exec(`start "" "http://localhost:${port}"`);
+              })
+              .catch(() => {});
+          }
+          return;
+        }
+        console.error(`[PANOPTICON] Server error:`, err);
+      };
+      server.on('error', onAddrInUse);
+      wss.on('error', () => {});
+
       server.listen(port, () => {
         console.log(`[PANOPTICON] Swarm Server listening on http://localhost:${port}`);
         console.log(`[PANOPTICON] Real-time WebSocket bus at ws://localhost:${port}/events`);

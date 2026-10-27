@@ -9,23 +9,26 @@
  * - 12-scenario keyframes, dialogue bubble, and manual test drawer.
  */
 
-/* Fixed Corner Widget Docked in Chat Prompt Area */
+/* Centered Consular Avatar Widget in Twin Sauron Masthead */
 #consular-prompt-avatar-widget {
-  width: 270px;
-  height: 140px;
+  width: 268px;
+  height: 152px;
+  margin: 0 auto;
   background: #090a0d;
   border: 1px solid var(--border-color);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   flex-shrink: 0;
-  transition: height 0.25s ease;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 #consular-prompt-avatar-widget.drawer-open {
-  height: 275px;
+  height: 152px;
+  overflow: visible;
+  border-color: var(--color-cyan);
 }
 
 /* CRT Scanlines Overlay */
@@ -167,6 +170,59 @@
   padding: 1px 4px;
   z-index: 3;
 }
+.ferric-substage .avatar-nametag {
+  left: auto;
+  right: 4px;
+}
+
+/* Per-Consul Solo / Independent Activity Status Pill */
+.avatar-solo-activity-pill {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 5px;
+  background: rgba(7, 9, 13, 0.86);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1.15;
+  color: #e2e8f0;
+  z-index: 5;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.65);
+  transition: opacity 0.25s ease, border-color 0.25s ease;
+}
+
+.ferric-activity-pill {
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+.solo-activity-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-cyan);
+  box-shadow: 0 0 5px var(--color-cyan);
+  animation: consulThinkingPulse 1.6s infinite ease-in-out;
+}
+
+.ferric-activity-pill .solo-activity-dot {
+  background: var(--color-amber);
+  box-shadow: 0 0 5px var(--color-amber);
+}
+
+.solo-activity-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+}
 
 /* Center Divider */
 .consul-divider {
@@ -206,8 +262,9 @@
 
 .wrestling-texture-sheet {
   background-image: url('/assets/avatars/consuls_wrestling_clash.jpg');
-  background-size: cover;
-  background-position: center;
+  background-size: 100% auto;
+  background-position: center 22%;
+  background-repeat: no-repeat;
   position: absolute;
   top: 0; left: 0; width: 100%; height: 100%;
 }
@@ -266,13 +323,19 @@
 
 /* Manual 12-Scenario Selector Drawer */
 .consular-scenario-drawer {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
   background: #0c0e14;
-  border-top: 1px solid var(--border-color);
+  border: 1px solid var(--border-color);
+  border-top: 1px solid var(--color-cyan);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85);
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  z-index: 20;
+  z-index: 100;
 }
 .consular-scenario-drawer.collapsed {
   display: none !important;
@@ -351,6 +414,16 @@
 body[data-avatar-state="idle_observing"] .nia-texture-sheet { background-position: 0% 0%; }
 body[data-avatar-state="idle_observing"] .ferric-texture-sheet { background-position: 0% 0%; }
 
+/* 01b: independent_working (Consuls working independently on cubicles, own tasks, and Gate 2 verification) */
+body[data-avatar-state="independent_working"] .nia-texture-sheet { background-position: 0% 0%; }
+body[data-avatar-state="independent_working"] .ferric-texture-sheet { background-position: 0% 0%; }
+body[data-avatar-state="independent_working"] #consular-prompt-avatar-widget {
+  border-color: rgba(6, 182, 212, 0.45);
+}
+body[data-avatar-state="independent_working"] #avatar-state-label {
+  color: var(--color-cyan);
+}
+
 /* 02: debating */
 body[data-avatar-state="debating"] .nia-texture-sheet { background-position: 100% 0%; }
 body[data-avatar-state="debating"] .ferric-texture-sheet { background-position: 100% 0%; }
@@ -390,3 +463,35 @@ body[data-avatar-state="self_evolution_upgrade"] .ferric-texture-sheet { backgro
 /* 12: night_shift_afk */
 body[data-avatar-state="night_shift_afk"] .nia-texture-sheet { background-position: 100% 100%; }
 body[data-avatar-state="night_shift_afk"] .ferric-texture-sheet { background-position: 100% 100%; }
+
+/* Codex / Antigravity Style Faded Updating Grey Thinking Text Underneath Replies */
+.consul-thinking-underneath {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.14);
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.58);
+  font-style: italic;
+  line-height: 1.35;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  transition: opacity 0.3s ease;
+}
+
+.consul-thinking-underneath .thinking-dot,
+.consul-cli-thinking .thinking-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.58);
+  margin-top: 4px;
+  flex-shrink: 0;
+  animation: consulThinkingPulse 1.6s infinite ease-in-out;
+}
+
+@keyframes consulThinkingPulse {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(0.75); }
+}

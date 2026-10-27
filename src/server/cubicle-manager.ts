@@ -86,7 +86,7 @@ export class CubicleManager {
 
     let configs: CubicleConfig[];
     try {
-      const raw = await fs.readFile(this.rosterPath, 'utf8');
+      const raw = (await fs.readFile(this.rosterPath, 'utf8')).replace(/^\uFEFF/, '');
       configs = JSON.parse(raw);
     } catch {
       // Seed default roster
@@ -130,29 +130,61 @@ export class CubicleManager {
       const fatigue = 100 - stamina;
       const tier = QuotaTracker.getStaminaTier(stamina);
 
-      const status: CubicleStatus = !cfg.enabled
+      let existingDisk: any = null;
+      if (!process.env.VITEST) {
+        try {
+          const rawStatus = (await fs.readFile(path.join(this.statusDir, `${id}.json`), 'utf8')).replace(/^\uFEFF/, '');
+          existingDisk = JSON.parse(rawStatus);
+        } catch {}
+      }
+
+      const defaultStatus: CubicleStatus = !cfg.enabled
         ? 'vacant'
         : stamina === 0
         ? 'exhausted'
         : 'idle';
 
-      const liveState: CubicleLiveState & { state?: string } = {
+      const status: CubicleStatus =
+        cfg.enabled &&
+        stamina > 0 &&
+        existingDisk?.status &&
+        ['working', 'under_inspection', 'idle'].includes(existingDisk.status)
+          ? existingDisk.status
+          : defaultStatus;
+
+      const preservedStream = Array.isArray(existingDisk?.thought_stream)
+        ? existingDisk.thought_stream.slice(-25)
+        : [];
+      const preservedThought =
+        cfg.enabled &&
+        existingDisk?.surface_thoughts &&
+        existingDisk.surface_thoughts !== 'Initialized. Standing by for instructions.' &&
+        existingDisk.surface_thoughts !== 'Slot unassigned.'
+          ? existingDisk.surface_thoughts
+          : cfg.enabled
+          ? 'Initialized. Standing by for instructions.'
+          : 'Slot unassigned.';
+
+      const liveState: CubicleLiveState & { state?: string; thought_stream?: any[]; assigned_task_title?: string | null; assigned_task_desc?: string | null } = {
         id,
         config: cfg,
         status,
         state: CubicleManager.mapStatusToDisplayState(status),
-        current_task_id: null,
-        active_subswarm_id: null,
-        surface_thoughts: cfg.enabled ? 'Initialized. Standing by for instructions.' : 'Slot unassigned.',
+        current_task_id: existingDisk?.current_task_id ?? null,
+        assigned_task_title: existingDisk?.assigned_task_title ?? null,
+        assigned_task_desc: existingDisk?.assigned_task_desc ?? null,
+        active_subswarm_id: existingDisk?.active_subswarm_id ?? null,
+        surface_thoughts: preservedThought,
+        thought_stream: preservedStream,
         stamina_percentage: stamina,
         fatigue_percentage: fatigue,
         stamina_tier: tier,
-        last_heartbeat: new Date().toISOString(),
+        last_heartbeat: existingDisk?.last_heartbeat || new Date().toISOString(),
         worktree_path: path.resolve(this.swarmDir, '..', 'worktrees', id),
         branch_name: `swarm/${id}`,
-        process_pid: null,
+        process_pid: existingDisk?.process_pid ?? null,
         port: 4101 + i,
-        error_details: null,
+        error_details: existingDisk?.error_details ?? null,
       };
 
       this.cubicles.set(id, liveState);
@@ -444,12 +476,25 @@ export class CubicleManager {
   }
 
   /**
-   * Updates surface thoughts stream ticker.
+   * Updates surface thoughts stream ticker and appends to recent thought_stream history.
    */
   public async updateSurfaceThoughts(id: string, thoughts: string): Promise<void> {
-    const cubicle = this.getCubicle(id);
+    const cubicle = this.getCubicle(id) as CubicleLiveState & {
+      thought_stream?: Array<{ text: string; timestamp: string }>;
+    };
+    const now = new Date().toISOString();
     cubicle.surface_thoughts = thoughts;
-    cubicle.last_heartbeat = new Date().toISOString();
+    cubicle.last_heartbeat = now;
+    if (!Array.isArray(cubicle.thought_stream)) {
+      cubicle.thought_stream = [];
+    }
+    const lastEntry = cubicle.thought_stream[cubicle.thought_stream.length - 1];
+    if (!lastEntry || lastEntry.text !== thoughts) {
+      cubicle.thought_stream.push({ text: thoughts, timestamp: now });
+      if (cubicle.thought_stream.length > 25) {
+        cubicle.thought_stream = cubicle.thought_stream.slice(-25);
+      }
+    }
     await this.saveStatusFile(cubicle);
     this.emitStateChange(cubicle, 'THOUGHT_UPDATE');
   }

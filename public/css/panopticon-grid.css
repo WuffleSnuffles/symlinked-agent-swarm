@@ -1,0 +1,795 @@
+/**
+ * src/public/css/panopticon-grid.css
+ *
+ * 4x4 Spatial Matrix Cubicle Grid Styling, Worker States & Port Sandbox Drawer.
+ */
+
+.cubicle-grid-container {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: 8px;
+  flex: 1;
+  padding: 8px;
+  position: relative;
+  background: var(--bg-primary);
+  overflow: auto;
+}
+
+/* Cubicle Card Structure */
+.cubicle-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  transition: all 0.2s ease;
+  overflow: hidden;
+  user-select: none;
+  min-height: 110px;
+}
+.cubicle-card:hover {
+  border-color: var(--border-active);
+  background: #191d28;
+}
+
+/* Card Header: Slot ID, AI Icon, Port Badge */
+.cubicle-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.cubicle-id-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--color-text-dim);
+}
+
+.cubicle-port-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  background: #0d0f14;
+  border: 1px solid #272d3d;
+  color: var(--color-cyan);
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.cubicle-port-badge:hover {
+  background: var(--color-cyan);
+  color: #000;
+}
+
+.cubicle-provider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.cubicle-provider-icon {
+  font-size: 14px;
+}
+
+.cubicle-model-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cubicle-subswarm-tag {
+  font-size: 8px;
+  padding: 1px 3px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid var(--color-phosphor);
+  color: var(--color-phosphor);
+  font-weight: 700;
+  margin-left: auto;
+}
+.cubicle-subswarm-tag.restricted {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--color-crimson);
+  color: var(--color-crimson);
+}
+
+/* Worker States */
+.cubicle-card.state-working {
+  border-color: var(--color-amber);
+  box-shadow: 0 0 10px var(--color-amber-glow);
+  animation: pulse-working 2.4s infinite ease-in-out;
+}
+
+.cubicle-card.state-idle {
+  border-color: var(--color-phosphor);
+  box-shadow: 0 0 6px var(--color-phosphor-glow);
+}
+
+.cubicle-card.state-under_inspection {
+  border-color: var(--color-crimson);
+  box-shadow: 0 0 16px var(--color-crimson-glow);
+  animation: flash-reticle 1s infinite alternate;
+}
+
+.cubicle-card.state-error {
+  border-color: #ff0033;
+  background: rgba(255, 0, 51, 0.08);
+  box-shadow: 0 0 20px rgba(255, 0, 51, 0.6);
+  animation: flash-alarm 0.5s infinite alternate;
+}
+
+.cubicle-card.state-vacant {
+  border-style: dashed;
+  opacity: 0.5;
+  background: rgba(16, 19, 26, 0.4);
+}
+.cubicle-card.state-vacant:hover {
+  opacity: 0.85;
+}
+
+@keyframes pulse-working {
+  0%, 100% { border-color: var(--color-amber); }
+  50% { border-color: #f97316; }
+}
+
+@keyframes flash-reticle {
+  0% { border-color: var(--color-crimson); }
+  100% { border-color: #ffffff; }
+}
+
+@keyframes flash-alarm {
+  0% { background: rgba(255, 0, 51, 0.05); }
+  100% { background: rgba(255, 0, 51, 0.25); }
+}
+
+/* Orbiting Sub-Swarm Drones */
+.orbit-drone-container {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+}
+.orbiting-drone {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: var(--color-amber);
+  box-shadow: 0 0 4px var(--color-amber);
+  animation: drone-orbit 2s linear infinite;
+}
+.orbiting-drone:nth-child(2) {
+  animation: drone-orbit 2s linear infinite -1s;
+  background: var(--color-cyan);
+  box-shadow: 0 0 4px var(--color-cyan);
+}
+
+@keyframes drone-orbit {
+  0% { transform: rotate(0deg) translateX(10px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(10px) rotate(-360deg); }
+}
+
+/* Fatigue & Usage Meter */
+.fatigue-section {
+  margin: 4px 0;
+}
+.fatigue-meter-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--color-text-dim);
+  margin-bottom: 2px;
+}
+.fatigue-meter-track {
+  width: 100%;
+  height: 5px;
+  background: #10131a;
+  border: 1px solid #232836;
+  position: relative;
+}
+.fatigue-meter-fill {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+.fatigue-tier-energized { background: var(--color-phosphor); }
+.fatigue-tier-moderate { background: var(--color-amber); }
+.fatigue-tier-critical { background: var(--color-crimson); }
+.fatigue-tier-exhausted { background: #7f1d1d; }
+
+/* Surface-Level Thoughts Ticker & OpenRig Thought Bubble */
+.cubicle-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cubicle-mind-btn {
+  font-size: 9px;
+  padding: 1px 5px;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid var(--color-phosphor);
+  color: var(--color-phosphor);
+  cursor: pointer;
+  letter-spacing: 0.4px;
+  font-weight: 700;
+}
+.cubicle-mind-btn:hover {
+  background: var(--color-phosphor);
+  color: #000;
+}
+
+.cubicle-task-pill {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--color-amber);
+  background: rgba(245, 158, 11, 0.12);
+  border-left: 2px solid var(--color-amber);
+  padding: 2px 5px;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.surface-thoughts-ticker {
+  font-size: 10px;
+  color: var(--color-text-bright);
+  background: #0b0e14;
+  padding: 4px 6px;
+  border: 1px solid #1f2737;
+  border-left: 2px solid var(--color-cyan);
+  margin-top: 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.surface-thoughts-ticker.thinking-active {
+  border-left-color: var(--color-phosphor);
+  background: rgba(16, 185, 129, 0.06);
+}
+.thought-bubble-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thought-bubble-line.latest {
+  color: var(--color-text-bright);
+  font-weight: 500;
+}
+.thought-bubble-line.prev {
+  font-size: 9px;
+  color: var(--color-text-dim);
+  opacity: 0.82;
+}
+.thought-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* OpenRig Worker Mind Inspector Drawer */
+.cubicle-mind-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(11, 13, 19, 0.97);
+  border: 1px solid var(--color-phosphor);
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.9);
+}
+.cubicle-mind-drawer.hidden {
+  display: none;
+}
+.cubicle-mind-header {
+  height: 38px;
+  background: #0d1118;
+  border-bottom: 1px solid #243044;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+}
+.cubicle-mind-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-phosphor);
+  letter-spacing: 0.6px;
+}
+.cubicle-mind-close-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid var(--color-crimson);
+  color: var(--color-crimson);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.cubicle-mind-close-btn:hover {
+  background: var(--color-crimson);
+  color: #fff;
+}
+.cubicle-mind-body {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mind-worker-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  background: #111621;
+  border: 1px solid #222b3d;
+  padding: 8px 10px;
+}
+.mind-summary-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mind-label {
+  font-size: 9px;
+  color: var(--color-text-dim);
+  letter-spacing: 0.5px;
+}
+.mind-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-bright);
+}
+.mind-value.status-working {
+  color: var(--color-amber);
+}
+.mind-value.status-idle {
+  color: var(--color-phosphor);
+}
+.mind-section-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mind-section-header {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--color-cyan);
+  border-bottom: 1px solid #1e2636;
+  padding-bottom: 4px;
+}
+.mind-task-box {
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 3px solid var(--color-amber);
+  padding: 8px 10px;
+}
+.mind-task-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-text-bright);
+  margin-bottom: 4px;
+}
+.mind-task-id {
+  font-size: 10px;
+  color: var(--color-amber);
+  font-weight: 500;
+}
+.mind-task-desc {
+  font-size: 10.5px;
+  color: var(--color-text-dim);
+  line-height: 1.4;
+}
+.mind-stream-list, .mind-peer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mind-stream-entry {
+  background: #10151f;
+  border: 1px solid #1e2636;
+  border-left: 3px solid var(--color-cyan);
+  padding: 6px 8px;
+}
+.mind-stream-entry.latest {
+  border-left-color: var(--color-phosphor);
+  background: rgba(16, 185, 129, 0.07);
+}
+.mind-stream-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--color-text-dim);
+  margin-bottom: 3px;
+}
+.mind-stream-badge {
+  font-weight: 700;
+  color: var(--color-phosphor);
+}
+.mind-stream-text {
+  font-size: 11px;
+  color: var(--color-text-bright);
+  line-height: 1.35;
+  word-break: break-word;
+}
+.mind-peer-entry {
+  background: #0f131c;
+  border: 1px solid #1f2738;
+  padding: 6px 8px;
+  font-size: 10.5px;
+}
+.mind-peer-route {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--color-cyan);
+}
+.mind-peer-text {
+  color: var(--color-text-bright);
+  margin-top: 2px;
+}
+.mind-empty-note {
+  font-size: 10.5px;
+  color: var(--color-text-dim);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* Port Sandbox Drawer */
+.sandbox-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 460px;
+  height: 100%;
+  background: var(--bg-card);
+  border-left: 2px solid var(--color-cyan);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.8);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sandbox-drawer.hidden {
+  transform: translateX(100%);
+  pointer-events: none;
+}
+.sandbox-drawer-header {
+  height: 38px;
+  background: #0d0f14;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+}
+.sandbox-iframe-wrapper {
+  flex: 1;
+  background: #ffffff;
+}
+.sandbox-iframe-wrapper iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* ============================================================================
+   OPENRIG VELLUM-DARK & SMOKED-GLASS SEAT TERMINAL GRID
+   Ported from mvschwarz/openrig:
+   - packages/ui/src/components/topology/TopologyTerminalView.tsx (SeatTerminalCard)
+   - packages/ui/src/components/topology/HybridTopologyNodes.tsx (HybridAgentNode)
+   - packages/ui/src/components/terminal/StaticTerminalPlate.tsx (SMOKED_STATIC_PLATE_CLASS)
+   - packages/ui/src/globals.css (.dark Vellum Dark tokens & activity-pulse-running)
+   ============================================================================ */
+
+.cubicle-grid-container {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)) !important;
+  grid-template-rows: none !important;
+  grid-auto-rows: 168px !important;
+  gap: 8px !important;
+  padding: 8px !important;
+  background: #111311 !important;
+  background-image: radial-gradient(hsl(120 6% 20%) 1px, transparent 1px) !important;
+  background-size: 16px 16px !important;
+  overflow-y: auto !important;
+}
+
+.cubicle-card.openrig-seat-card {
+  min-width: 0;
+  min-height: 142px;
+  padding: 5px 6px 6px !important;
+  border-radius: 0 !important;
+  background: #171917 !important; /* OpenRig .dark --surface-container-lowest */
+  border: 1px solid #2b302b !important;
+  box-shadow: 2px 2px 0px #000000 !important; /* OpenRig .dark .hard-shadow */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px !important;
+  animation: none !important;
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* OpenRig rule (globals.css L666): STATE is a small accent (activity dot + thin inset ring),
+   NOT a full-card wash — node bodies stay uniformly dark. */
+.cubicle-card.openrig-seat-card.state-working {
+  border-color: rgba(67, 198, 132, 0.48) !important;
+  box-shadow: 2px 2px 0px #000000, inset 0 0 0 1px rgba(16, 185, 129, 0.14) !important;
+}
+
+.cubicle-card.openrig-seat-card.state-idle {
+  border-color: #2b302b !important;
+}
+
+.cubicle-card.openrig-seat-card.state-under_inspection {
+  border-color: rgba(245, 158, 11, 0.65) !important;
+  box-shadow: 2px 2px 0px #000000, inset 0 0 0 1px rgba(245, 158, 11, 0.22) !important;
+}
+
+.cubicle-card.openrig-seat-card.state-error {
+  border-color: rgba(226, 101, 98, 0.75) !important;
+  box-shadow: 2px 2px 0px #000000, inset 0 0 0 1px rgba(220, 38, 38, 0.25) !important;
+}
+
+.cubicle-card.openrig-seat-card.state-vacant {
+  border: 1px dashed rgba(97, 107, 95, 0.42) !important;
+  background: rgba(17, 19, 17, 0.55) !important;
+  box-shadow: none !important;
+  opacity: 0.65;
+}
+
+/* Wrap metadata as a group when the seat is too narrow for one row. */
+.openrig-seat-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 1px 2px 3px;
+  border-bottom: 1px solid rgba(97, 107, 95, 0.28);
+  flex-shrink: 0;
+}
+
+.openrig-seat-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.openrig-seat-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+/* OpenRig PL-019 Activity Dot (globals.css L354-L360) */
+@keyframes openrig-pulse-running {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.0); }
+  50%      { opacity: 0.85; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.24); }
+}
+
+.openrig-activity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px !important;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: #5b615a;
+}
+
+.openrig-activity-dot.dot-working {
+  background: #43c684;
+  animation: openrig-pulse-running 1.8s ease-in-out infinite;
+}
+
+.openrig-activity-dot.dot-idle {
+  background: #616b5f;
+}
+
+.openrig-activity-dot.dot-under_inspection {
+  background: #f6b13a;
+}
+
+.openrig-activity-dot.dot-error {
+  background: #e26562;
+}
+
+.openrig-activity-dot.dot-vacant {
+  background: transparent;
+  border-color: #4b5349;
+}
+
+.openrig-seat-card .cubicle-id-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #e4e8e0;
+  white-space: nowrap;
+}
+
+.openrig-runtime-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: #a3a99f;
+}
+
+.openrig-runtime-svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.openrig-seat-card .cubicle-model-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: #c7cdc3;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.openrig-context-metric {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.openrig-context-metric.ctx-ok { color: #43c684; }
+.openrig-context-metric.ctx-warn { color: #f6b13a; }
+.openrig-context-metric.ctx-high { color: #e26562; }
+
+/* OpenRig Hover-Only Action Buttons (HybridTopologyNodes.tsx L137) */
+.openrig-hover-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.openrig-seat-card:hover .openrig-hover-actions,
+.openrig-seat-card:focus-within .openrig-hover-actions {
+  opacity: 1;
+}
+.openrig-hover-btn {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  background: #111311 !important;
+  border: 1px solid #4b5349 !important;
+  color: #e4e8e0 !important;
+  cursor: pointer;
+}
+.openrig-hover-btn:hover {
+  background: #2f3a4c !important;
+  border-color: #92abcf !important;
+  color: #ffffff !important;
+}
+
+/* Compact 1-Line Task Sub-Header */
+.openrig-seat-card .cubicle-task-pill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: #f6b13a;
+  background: rgba(246, 177, 58, 0.08) !important;
+  border: 0 !important;
+  border-left: 2px solid #f6b13a !important;
+  padding: 1px 5px !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  flex-shrink: 0;
+}
+
+/* OpenRig Smoked-Glass StaticTerminalPlate (StaticTerminalPlate.tsx L26: bg-stone-950/85 backdrop-blur-sm) */
+.openrig-smoked-plate {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 0;
+  max-height: 155px;
+  background: rgba(12, 10, 9, 0.86) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(75, 83, 73, 0.25) !important;
+  border-radius: 0 !important;
+  padding: 5px 6px !important;
+  margin: 0 !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+  scrollbar-color: #2b302b transparent;
+  font-family: var(--font-mono);
+  font-size: 11px !important;
+  line-height: 1.38 !important;
+  color: #fafaf9 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 3px !important;
+}
+
+.openrig-smoked-plate.thinking-active {
+  background: #0c0a09 !important; /* OpenRig live opaque #0c0a09 terminal surface */
+  border-color: rgba(67, 198, 132, 0.28) !important;
+}
+
+.openrig-smoked-plate .thought-bubble-line {
+  display: flex !important;
+  /* Rows must overflow the scrollport, never shrink into clipped text slivers. */
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: visible;
+  align-items: flex-start;
+  gap: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.openrig-smoked-plate .thought-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+  user-select: text;
+}
+
+.openrig-smoked-plate .thought-prompt-char {
+  color: #43c684;
+  font-weight: 700;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.openrig-smoked-plate .thought-bubble-line.prev {
+  font-size: 11px !important;
+  color: #c7cdc3 !important;
+  opacity: 1 !important;
+}
+
+.openrig-smoked-plate .thought-bubble-line.prev .thought-prompt-char {
+  color: #57534e;
+}
+
+@media (max-width: 1100px) {
+  .cubicle-grid-container {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 600px) {
+  .cubicle-grid-container {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

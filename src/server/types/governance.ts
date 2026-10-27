@@ -63,6 +63,15 @@ export interface DualConsulState {
   consuls: [ConsulConfig, ConsulConfig];
 }
 
+export interface ConsularDialogueQuestionPrompt {
+  question_id?: string;
+  asking_consul?: 'Consul Nia Nova' | 'Consul Ferric Lunaux' | 'Nia' | 'Ferric' | string;
+  question: string;
+  options: string[];
+  multiSelect?: boolean;
+  status?: 'PENDING' | 'ANSWERED' | 'SKIPPED';
+}
+
 export interface ConsularDialogueMessage {
   id: string;
   sender: 'Consul Nia Nova' | 'Consul Ferric Lunaux' | 'Consul I' | 'Consul II' | 'Overseer' | 'User';
@@ -71,13 +80,16 @@ export interface ConsularDialogueMessage {
   phase: 'PLANNING_GATE' | 'REVIEW_GATE' | 'DELIBERATION' | 'DISCIPLINE' | 'GENERAL' | 'USER_CHAT';
   timestamp: string;
   attachments?: any[];
+  thinking?: string;
+  replyTo?: { id: string; sender: string; content: string };
+  questions?: ConsularDialogueQuestionPrompt[];
 }
 
 export interface ConsularPlanGate {
   plan_id: string;
   goal: string;
   proposed_plan: string[];
-  task_splits: Array<{ cubicleId: string; subtask: string }>;
+  task_splits: Array<{ cubicleId: string; subtask: string; file_scope?: string[] }>;
   status: 'PENDING_PLAN_VOTE' | 'DISPATCH_AUTHORIZED' | 'PLAN_VETO_REVISED';
   dialogue: ConsularDialogueMessage[];
   votes?: [ConsularVote, ConsularVote];
@@ -198,6 +210,9 @@ export interface QuestionOption {
 }
 
 export interface ConsularQuestion {
+  context?: string;
+  resume_status?: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  resume_error?: string;
   question_id: string;
   asking_consul: 'Nia' | 'Ferric' | string;
   prompt: string;
@@ -214,6 +229,7 @@ export interface ConsularQuestion {
 }
 
 export interface CreateQuestionDTO {
+  context?: string;
   asking_consul?: string;
   prompt: string;
   options: QuestionOption[];
@@ -233,6 +249,7 @@ export interface AnswerQuestionDTO {
 
 export type ConsularAvatarScenario =
   | 'idle_observing'
+  | 'independent_working'
   | 'debating'
   | 'wrestling_fistfight'
   | 'nia_impatient'
@@ -273,4 +290,3 @@ export interface MidWorkInterventionResult {
   details?: Record<string, any>;
   timestamp: string;
 }
-

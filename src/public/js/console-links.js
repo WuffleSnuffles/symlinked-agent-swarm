@@ -69,7 +69,7 @@ function renderInlineText(container, text) {
 function renderMarkdownTable(rawTable) {
   const lines = rawTable.trim().split('\n').map((l) => l.trim()).filter(Boolean);
   const table = document.createElement('table');
-  table.style.cssText = 'width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; background: #0a0d14; border: 1px solid #1e293b;';
+  table.style.cssText = 'width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 12px; background: #0a0d14; border: 1px solid #1e293b;';
   lines.forEach((line, idx) => {
     if (/^\|[\s:-]+\|$/.test(line.replace(/\|/g, '|'))) {
       const cellsOnly = line.split('|').slice(1, -1);

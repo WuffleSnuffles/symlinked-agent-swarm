@@ -172,14 +172,19 @@ export class TaskboardViewController {
   }
 
   renderTasks(tasksData = {}) {
-    const columns = ['todo', 'in_progress', 'review', 'done'];
+    const mergedData = {
+      todo: tasksData.todo || [],
+      in_progress: [...(tasksData.in_progress || []), ...(tasksData.review || [])],
+      done: tasksData.done || [],
+    };
+    const columns = ['todo', 'in_progress', 'done'];
 
     columns.forEach((colKey) => {
       const colEl = this.cols[colKey];
       if (!colEl) return;
       colEl.innerHTML = '';
 
-      const tasks = tasksData[colKey] || [];
+      const tasks = mergedData[colKey] || [];
       tasks.forEach((t) => {
         const card = document.createElement('div');
         card.className = 'kanban-task-card';
@@ -187,7 +192,7 @@ export class TaskboardViewController {
 
         const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
         const origin = escape(t.origin || (t.title?.includes('[OPENCLAW]') ? 'OPENCLAW' : (t.title?.includes('[HERMES]') ? 'HERMES' : 'USER')));
-        const assigned = escape(t.assigned_cubicle || 'UNASSIGNED');
+        const assigned = escape(t.assigned_cubicle || t.assigned_to || t.assignee || t.assigned_consul || t.owner || 'UNASSIGNED');
         const progress = Math.max(0, Math.min(100, Number(t.progress_percent) || 0));
 
         card.innerHTML = `
@@ -200,7 +205,7 @@ export class TaskboardViewController {
             <small>${escape(t.id)}</small>
           </details>
           <div style="display: flex; justify-content: space-between; font-size: 9px; margin-top: 4px;">
-            <span>ASSIGNED: <strong>${assigned.toUpperCase()}</strong></span>
+            <span>ASSIGNED: <strong>${assigned}</strong></span>
             <span>${progress}%</span>
           </div>
           <div style="height: 3px; background: #1a1e2d;">

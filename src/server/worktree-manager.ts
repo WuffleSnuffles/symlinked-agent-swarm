@@ -18,6 +18,7 @@ export interface WorktreeInfo {
   isLocked: boolean;
   swarmJunctionActive: boolean;
   agentsJunctionActive: boolean;
+  nodeModulesJunctionActive?: boolean;
 }
 
 export interface GitExecResult {
@@ -149,6 +150,7 @@ export class WorktreeManager {
    * Provisions an isolated Git worktree for the specified cubicle and creates junctions.
    */
   public async provisionWorktree(cubicleId: string): Promise<WorktreeInfo> {
+    if (!/^cubicle-\d{2}$/.test(cubicleId)) throw new Error('Invalid cubicle ID');
     await this.validateRepository();
     await fs.mkdir(this.worktreesBaseDir, { recursive: true });
     await fs.mkdir(this.swarmDir, { recursive: true });
@@ -159,7 +161,8 @@ export class WorktreeManager {
 
     // Reconcile existing worktree list
     const activeWorktrees = await this.listWorktrees();
-    const existing = activeWorktrees.find((w) => w.cubicleId === cubicleId);
+    const existing = activeWorktrees.find((w) => path.resolve(w.worktreePath) === path.resolve(worktreePath));
+    if (existing && existing.branch !== branchName) throw new Error('Cubicle worktree is on an unexpected branch');
 
     let needsAdd = true;
     if (existing) {
@@ -178,13 +181,7 @@ export class WorktreeManager {
     }
 
     if (needsAdd) {
-      try {
-        await this.execGit(['worktree', 'add', worktreePath, branchName]);
-      } catch {
-        // If git error indicates checkout conflict or dirty tree, try pruning and re-adding
-        await this.pruneWorktrees();
-        await this.execGit(['worktree', 'add', '--force', worktreePath, branchName]);
-      }
+      await this.execGit(['worktree', 'add', worktreePath, branchName]);
     }
 
     // Link shared .swarm and .agents junctions
@@ -200,13 +197,14 @@ export class WorktreeManager {
       isLocked: false,
       swarmJunctionActive: junctions.swarmActive,
       agentsJunctionActive: junctions.agentsActive,
+      nodeModulesJunctionActive: junctions.nodeModulesActive,
     };
   }
 
   /**
    * Links .swarm and .agents into the worktree using Windows NTFS Junctions (or POSIX symlinks).
    */
-  public async linkSharedDirectories(worktreePath: string): Promise<{ swarmActive: boolean; agentsActive: boolean }> {
+  public async linkSharedDirectories(worktreePath: string): Promise<{ swarmActive: boolean; agentsActive: boolean; nodeModulesActive: boolean }> {
     const targetSwarm = path.resolve(this.swarmDir);
     const linkSwarm = path.join(worktreePath, '.swarm');
 
@@ -215,11 +213,13 @@ export class WorktreeManager {
 
     await this.createJunctionOrSymlink(targetSwarm, linkSwarm);
     await this.createJunctionOrSymlink(targetAgents, linkAgents);
+    const linkModules = path.join(worktreePath, 'node_modules');
+    await this.createJunctionOrSymlink(path.join(this.repoRoot, 'node_modules'), linkModules);
 
     const swarmActive = await this.verifyJunction(linkSwarm);
     const agentsActive = await this.verifyJunction(linkAgents);
 
-    return { swarmActive, agentsActive };
+    return { swarmActive, agentsActive, nodeModulesActive: await this.verifyJunction(linkModules) };
   }
 
   /**
@@ -227,18 +227,45 @@ export class WorktreeManager {
    */
   public async createJunctionOrSymlink(targetDir: string, linkPath: string): Promise<void> {
     await fs.mkdir(targetDir, { recursive: true });
+    const backup = `${linkPath}.worktree-local`;
 
     try {
       const stat = await fs.lstat(linkPath);
-      if (stat.isSymbolicLink() || stat.isDirectory()) {
+      if (stat.isSymbolicLink()) {
+        if (path.resolve(await fs.realpath(linkPath)) === path.resolve(targetDir)) return;
         await this.safeRemoveJunction(linkPath);
+      } else if (stat.isDirectory()) {
+        // Git may track shared directories. Preserve the checkout before replacing it.
+        try {
+          await fs.lstat(backup);
+          await fs.rm(linkPath, { recursive: true, force: true });
+        } catch (error: any) {
+          if (error.code !== 'ENOENT') throw error;
+          await fs.rename(linkPath, backup);
+        }
       }
     } catch (err: any) {
       if (err.code !== 'ENOENT') throw err;
     }
 
     const linkType = process.platform === 'win32' ? 'junction' : 'dir';
-    await fs.symlink(path.resolve(targetDir), path.resolve(linkPath), linkType);
+    try {
+      await fs.symlink(path.resolve(targetDir), path.resolve(linkPath), linkType);
+    } catch (err: any) {
+      // Virtual filesystems (e.g., Google Drive H:\) do not support NTFS junctions and throw EISDIR / EPERM / ENOTSUP / EINVAL.
+      if (err && ['EISDIR', 'EPERM', 'ENOTSUP', 'EINVAL'].includes(err.code)) {
+        try {
+          const bStat = await fs.lstat(backup);
+          if (bStat.isDirectory()) {
+            await fs.rename(backup, linkPath);
+            return;
+          }
+        } catch {}
+        await fs.mkdir(linkPath, { recursive: true });
+        return;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -247,7 +274,7 @@ export class WorktreeManager {
   public async verifyJunction(junctionPath: string): Promise<boolean> {
     try {
       const stat = await fs.lstat(junctionPath);
-      return stat.isSymbolicLink() || stat.isDirectory();
+      return stat.isSymbolicLink() && (await fs.stat(junctionPath)).isDirectory();
     } catch {
       return false;
     }
@@ -259,10 +286,10 @@ export class WorktreeManager {
   public async safeRemoveJunction(junctionPath: string): Promise<void> {
     try {
       const stat = await fs.lstat(junctionPath);
-      if (stat.isSymbolicLink() || stat.isDirectory()) {
+      if (stat.isSymbolicLink()) {
         // On Windows NTFS, calling rmdir deletes ONLY the reparse link itself.
         // It never deletes or modifies the contents of the target folder!
-        await fs.rmdir(junctionPath);
+        await fs.unlink(junctionPath);
       }
     } catch (err: any) {
       if (err.code !== 'ENOENT') throw err;
@@ -278,6 +305,7 @@ export class WorktreeManager {
     // Safely remove junctions first!
     await this.safeRemoveJunction(path.join(worktreePath, '.swarm'));
     await this.safeRemoveJunction(path.join(worktreePath, '.agents'));
+    await this.safeRemoveJunction(path.join(worktreePath, 'node_modules'));
 
     const args = ['worktree', 'remove'];
     if (force) args.push('--force');

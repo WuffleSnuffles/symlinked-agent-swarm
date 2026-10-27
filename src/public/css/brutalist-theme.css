@@ -62,6 +62,10 @@ html, body {
   user-select: text;
 }
 
+button, input, textarea, select {
+  font-family: var(--font-mono);
+}
+
 /* Industrial Monospace Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
@@ -240,3 +244,7 @@ html, body {
 .badge-tag.tag-crimson { border-color: var(--color-crimson); color: var(--color-crimson); }
 .badge-tag.tag-phosphor { border-color: var(--color-phosphor); color: var(--color-phosphor); }
 .badge-tag.tag-cyan { border-color: var(--color-cyan); color: var(--color-cyan); }
+
+#consular-dialogue-feed {
+  background: #07090d;
+}

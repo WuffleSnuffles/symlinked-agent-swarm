@@ -12,7 +12,7 @@
  * 8. Preference Engine High-Concurrency Writes & Disaster Corruption Recovery
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs, existsSync } from 'fs';
 import path from 'path';
 import { createTestSandbox } from '../e2e/helpers';
@@ -394,6 +394,7 @@ describe('Empirical Adversarial Test Suite: 7 Advanced Swarm Features, Q&A & Pre
   // =========================================================================
   describe('7. Consular Q&A Engine & Autonomous Preference Learning', () => {
     it('creates questions, supports skip without learning, and answers with custom write-in propagating to nia_growth and preference rules', async () => {
+      vi.spyOn(consularEngine as any, 'resumeQuestion').mockResolvedValue(undefined);
       // 1. Create Question 1 (To be skipped)
       const q1 = await consularEngine.createQuestion({
         asking_consul: 'Nia',

@@ -102,13 +102,37 @@ export function createGovernanceRouter(
 
   router.post('/governance/chat', async (req: Request, res: Response) => {
     try {
-      const { prompt, goal, attachments } = req.body;
-      const text = (prompt || goal || '').trim();
+      const { prompt, goal, text: bodyText, message, attachments, replyTo } = req.body || {};
+      const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+      const text =
+        (prompt || goal || bodyText || message || '').trim() ||
+        (hasAttachments ? 'Please review the attached image.' : '');
       if (!text) {
         res.status(400).json({ error: 'prompt is required.' });
         return;
       }
-      const result = await consularEngine.chatWithConsuls(text, attachments || []);
+
+      const workerSpoof = consularEngine.detectWorkerChatSpoof(text, {
+        ...(req.body || {}),
+        headers: req.headers,
+      });
+      if (workerSpoof) {
+        const routed = await consularEngine.routeWorkerCoordination(text, {
+          ...(req.body || {}),
+          headers: req.headers,
+        });
+        res.status(403).json({
+          error: `OVERSEER_SPOOF_BLOCKED: Worker ${routed.cubicleId} cannot post to /api/governance/chat as Overseer. Coordination routed to /api/messages and Consular Deliberation.`,
+          routed: true,
+          routedTo: '/api/messages',
+          cubicleId: routed.cubicleId,
+          message: routed.message,
+          deliberation: routed.deliberation,
+        });
+        return;
+      }
+
+      const result = await consularEngine.chatWithConsuls(text, attachments || [], replyTo);
       res.status(201).json(result);
     } catch (err: any) {
       res.status(400).json({ error: err.message });

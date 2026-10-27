@@ -41,7 +41,7 @@ export interface PreferencesDatabase {
   preferences: PreferenceEntry[];
 }
 
-export type PreferenceEventCallback = (type: string, payload: any) => void;
+export type PreferenceEventCallback = (type: string, payload: any) => void | Promise<void>;
 
 export class PreferenceEngine {
   private swarmDir: string;
@@ -72,10 +72,10 @@ export class PreferenceEngine {
     return () => this.eventListeners.delete(callback);
   }
 
-  private emit(type: string, payload: any): void {
+  private async emit(type: string, payload: any): Promise<void> {
     for (const listener of this.eventListeners) {
       try {
-        listener(type, payload);
+        await listener(type, payload);
       } catch (err) {
         console.error(`[PreferenceEngine] Event callback error for ${type}:`, err);
       }
@@ -132,6 +132,14 @@ export class PreferenceEngine {
 
   public getDatabase(): PreferencesDatabase {
     return this.db;
+  }
+
+  public async ingestText(message: string, sourceMessageId?: string): Promise<PreferenceEntry[]> {
+    const saved: PreferenceEntry[] = [];
+    for (const preference of this.extractPreferences(message, sourceMessageId)) {
+      saved.push(await this.savePreference(preference));
+    }
+    return saved;
   }
 
   public getPreferences(): PreferenceEntry[] {
@@ -252,7 +260,6 @@ export class PreferenceEngine {
         hit_count: (existing.hit_count || 1) + 1,
       };
       this.db.preferences[existingIndex] = result;
-      this.emit('PREFERENCE_UPDATED', { preference: result });
     } else {
       // Create new entry
       result = {
@@ -263,7 +270,6 @@ export class PreferenceEngine {
         hit_count: pref.hit_count || 1,
       };
       this.db.preferences.push(result);
-      this.emit('PREFERENCE_LEARNED', { preference: result });
     }
 
     this.db.total_preferences = this.db.preferences.length;
@@ -271,6 +277,7 @@ export class PreferenceEngine {
 
     await this.atomicWriteDb();
     await this.compileMarkdown();
+    await this.emit(existingIndex >= 0 ? 'PREFERENCE_UPDATED' : 'PREFERENCE_LEARNED', { preference: result });
     return result;
   }
 
@@ -283,7 +290,7 @@ export class PreferenceEngine {
       this.db.last_updated = new Date().toISOString();
       await this.atomicWriteDb();
       await this.compileMarkdown();
-      this.emit('PREFERENCE_DELETED', { idOrKey });
+      await this.emit('PREFERENCE_DELETED', { idOrKey });
       return true;
     }
     return false;

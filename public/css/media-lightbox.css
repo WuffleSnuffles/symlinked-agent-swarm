@@ -1,0 +1,225 @@
+/**
+ * src/public/css/media-lightbox.css
+ *
+ * Rich Multimodal Media Renderer: Inline Cards & Panopticon Lightbox Modal.
+ * Supports PDFs, Images, Videos, and Audio with interactive inspection.
+ */
+
+/* Inline Multimodal Cards */
+.multimodal-card {
+  background: #0f121a;
+  border: 1px solid var(--border-color);
+  margin: 6px 0;
+  max-width: 520px;
+  overflow: hidden;
+}
+
+.multimodal-card .card-header {
+  height: 28px;
+  background: #141724;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.card-header .file-name {
+  font-weight: 600;
+  color: var(--color-text-bright);
+}
+
+.card-header .btn-open-pdf-modal {
+  background: transparent;
+  color: var(--color-cyan);
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.card-header .btn-open-pdf-modal:hover {
+  text-decoration: underline;
+}
+
+/* Inline PDF Viewport */
+.pdf-inline-viewport {
+  width: 100%;
+  height: 220px;
+  background: #2a2d3d;
+}
+.pdf-inline-viewport iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* Inline Image Card */
+.image-thumb-wrapper {
+  position: relative;
+  cursor: zoom-in;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: 260px;
+}
+.image-thumb-wrapper img {
+  max-width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  display: block;
+}
+.image-hover-reticle {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(6, 182, 212, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.image-thumb-wrapper:hover .image-hover-reticle {
+  opacity: 1;
+}
+.image-hover-reticle span {
+  background: #090b10;
+  border: 1px solid var(--color-cyan);
+  color: var(--color-cyan);
+  padding: 4px 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.multimodal-card .card-footer {
+  height: 22px;
+  background: #0d0f15;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  font-size: 9px;
+  color: var(--color-text-dim);
+}
+
+/* Video Player */
+.video-wrapper {
+  width: 100%;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.video-wrapper video {
+  width: 100%;
+  max-height: 280px;
+  outline: none;
+}
+
+/* Audio Player */
+.audio-wrapper {
+  padding: 8px;
+  background: #0d0f15;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.audio-wrapper audio {
+  width: 100%;
+  height: 32px;
+  outline: none;
+}
+
+/* Full Panopticon Lightbox Modal */
+#panopticon-lightbox-modal {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(6, 7, 10, 0.94);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(4px);
+}
+#panopticon-lightbox-modal.hidden {
+  display: none !important;
+}
+
+.lightbox-header {
+  height: 42px;
+  background: #0b0d14;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 10;
+}
+.lightbox-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--color-cyan);
+}
+.lightbox-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lightbox-viewport {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+}
+.lightbox-viewport:active {
+  cursor: grabbing;
+}
+.lightbox-image-target {
+  max-width: 90%;
+  max-height: 90%;
+  object-fit: contain;
+  transition: transform 0.1s ease-out;
+  transform-origin: center center;
+  user-select: none;
+}
+
+/* Modal PDF Inspector */
+#pdf-inspector-modal {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(6, 7, 10, 0.96);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+}
+#pdf-inspector-modal.hidden {
+  display: none !important;
+}
+
+.pdf-inspector-header {
+  height: 42px;
+  background: #0b0d14;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+.pdf-inspector-frame-wrapper {
+  flex: 1;
+  background: #1e2230;
+}
+.pdf-inspector-frame-wrapper iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}

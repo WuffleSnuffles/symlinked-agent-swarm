@@ -45,7 +45,34 @@ import { CubicleManager } from './cubicle-manager.js';
 import { TaskboardManager } from './taskboard-manager.js';
 import { CapabilityMatrix } from './capability-matrix.js';
 import { WorktreeManager } from './worktree-manager.js';
+import { normalizeFileScope, scopesOverlap } from './dispatch-isolation.js';
+import {
+  attachChildActivityHeartbeat,
+  buildLightweightVerificationInstruction,
+  formatConsulCliTimeoutOutput,
+  isCliTimeoutOrError as isHeartbeatTimeoutOrError,
+} from './cli-heartbeat.js';
 import { SelfUpdateManager } from './self-update-manager.js';
+import { PreferenceEngine } from './preference-engine.js';
+
+// Keep this predicate aligned with the server/browser copy; regression tests cover both.
+function isConsularCliNoise(rawText: string): boolean {
+  const text = rawText
+    .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+    .trim()
+    .replace(/^(?:Nia|Ferric)(?:\s*(?:\u2192|->)\s*(?:Nia|Ferric))?:\s*/i, '')
+    .replace(/^\[DELIBERATE:\s*([\s\S]*?)\s*\]$/i, '$1')
+    .replace(/^["']([\s\S]*)["']$/, '$1')
+    .trim();
+  return !text ||
+    /^[\d,\s.:%+-]+$/.test(text) ||
+    /^(?:(?:input|output|total|cached|reasoning)[ _-]+)?tokens?(?:[ _-]+(?:used|count))?\s*(?::|=|$|\d)/i.test(text) ||
+    /^[\d,]+\s+tokens?\b/i.test(text) ||
+    /^(?:OpenAI Codex\b|workdir:|model:|provider:|approval:|sandbox:|session id:|reasoning (?:effort|summaries):|Reading additional input\b|mcp(?:\s|:)|(?:exec|user|codex|assistant|system|thinking)\s*$)/i.test(text) ||
+    /^(?:Respond directly to the Overseer\b|You are Consul (?:Nia Nova|Ferric Lunaux)\b|Your underlying CLI\/model\b|Personality(?:\s*&\s*Readability Skill)?:\s|WORKSPACE, GITHUB & KANBAN\b|Live Swarm Status:\s|Recent Console Transcript:\s*|Overseer just said:\s)/i.test(text) ||
+    /^(?:[{}\[\],]+\s*$|\{|\[\s*(?:\{|"|\d|\]|true\b|false\b|null\b)|"[^"\n]+"\s*:)/.test(text) ||
+    /^(?:\x60\x60\x60(?:json|jsonl)?\s*$|(?:succeeded|exited) in\s+\d|Process exited with code\b|Wall time:|Total output lines:)/i.test(text);
+}
 
 export type ConsularEventCallback = (type: string, payload: any) => void;
 
@@ -70,7 +97,9 @@ export class ConsularEngine {
   private taskboardManager: TaskboardManager;
   private capabilityMatrix: CapabilityMatrix;
   private worktreeManager?: WorktreeManager;
-  private preferenceEngine?: any;
+  private preferenceEngine?: PreferenceEngine;
+  private unsubscribePreferences?: () => void;
+  private growthWriteQueue: Promise<void> = Promise.resolve();
   private selfUpdateManager: SelfUpdateManager;
   private eventListeners: Set<ConsularEventCallback> = new Set();
   private typedListeners: Map<string, Map<(payload: any) => void, ConsularEventCallback>> = new Map();
@@ -89,6 +118,7 @@ export class ConsularEngine {
     updated_at: new Date().toISOString(),
   };
   private debateTurnsCount: number = 0;
+  private lastOrphanedAlertSignature: string | null = null;
 
   constructor(
     swarmDir: string,
@@ -115,16 +145,28 @@ export class ConsularEngine {
     this.cubicleManager = cubicleManager;
     this.taskboardManager = taskboardManager;
     this.capabilityMatrix = capabilityMatrix;
-    this.worktreeManager = worktreeManager;
+    this.worktreeManager = worktreeManager ?? new WorktreeManager(this.projectRoot);
     this.selfUpdateManager = new SelfUpdateManager(this.projectRoot);
+    if (typeof this.taskboardManager?.onTaskCreated === 'function') {
+      this.taskboardManager.onTaskCreated(async (task) => {
+        await this.recordLiveEvolution(`Task created: ${task.title}`);
+      });
+    }
   }
 
   public getSelfUpdateManager(): SelfUpdateManager {
     return this.selfUpdateManager;
   }
 
-  public setPreferenceEngine(pe: any): void {
+  public setPreferenceEngine(pe: PreferenceEngine): void {
+    this.unsubscribePreferences?.();
     this.preferenceEngine = pe;
+    this.unsubscribePreferences = pe.onEvent(async (type, payload) => {
+      if (type === 'PREFERENCE_LEARNED' || type === 'PREFERENCE_UPDATED') {
+        await this.recordLiveEvolution(`Learned preference: ${payload.preference.rule}`, undefined,
+          type === 'PREFERENCE_LEARNED' ? 1 : 0);
+      }
+    });
   }
 
   public onEvent(callback: ConsularEventCallback): () => void {
@@ -318,6 +360,10 @@ export class ConsularEngine {
         const rawQuestions = await fs.readFile(this.questionsPath, 'utf8');
         const qList: ConsularQuestion[] = JSON.parse(rawQuestions);
         for (const q of qList) {
+          if (q.resume_status === 'RUNNING' || q.resume_status === 'QUEUED') {
+            q.resume_status = 'FAILED';
+            q.resume_error = 'Server restarted during continuation; answer saved. Ask the Consul to continue using this question ID.';
+          }
           this.questions.set(q.question_id, q);
         }
       } catch {}
@@ -397,7 +443,7 @@ export class ConsularEngine {
     growth.rebellion_index = Math.min(1.0, growth.rebellion_index + 0.02);
     growth.last_growth = new Date().toISOString();
     this.niaGrowth = growth;
-    await fs.writeFile(this.niaGrowthPath, JSON.stringify(growth, null, 2), 'utf8');
+    await this.persistGrowth(this.niaGrowthPath, growth);
     this.emit('CONSUL_GROWTH', { consul: 'Consul Nia Nova', growth });
     return growth;
   }
@@ -405,20 +451,54 @@ export class ConsularEngine {
   public async evolveFerric(
     cubicleId: string,
     success: boolean,
-    bugCaught: boolean = false
+    bugCaught: boolean = false,
+    heuristic?: string
   ): Promise<FerricGrowthState> {
     const growth = this.getFerricGrowth();
-    if (!growth.cubicle_performance[cubicleId]) {
+    if (cubicleId && !growth.cubicle_performance[cubicleId]) {
       growth.cubicle_performance[cubicleId] = { tasks_completed: 0, bugs_caught: 0 };
     }
-    if (success) growth.cubicle_performance[cubicleId].tasks_completed++;
-    if (bugCaught) growth.cubicle_performance[cubicleId].bugs_caught++;
+    if (cubicleId && success) growth.cubicle_performance[cubicleId].tasks_completed++;
+    if (cubicleId && bugCaught) growth.cubicle_performance[cubicleId].bugs_caught++;
+    if (heuristic && !growth.efficiency_heuristics.includes(heuristic)) {
+      growth.efficiency_heuristics.push(heuristic);
+    }
 
     growth.last_growth = new Date().toISOString();
     this.ferricGrowth = growth;
-    await fs.writeFile(this.ferricGrowthPath, JSON.stringify(growth, null, 2), 'utf8');
+    await this.persistGrowth(this.ferricGrowthPath, growth);
     this.emit('CONSUL_GROWTH', { consul: 'Consul Ferric Lunaux', growth });
     return growth;
+  }
+
+  private async persistGrowth(filePath: string, growth: NiaGrowthState | FerricGrowthState): Promise<void> {
+    const snapshot = JSON.stringify(growth, null, 2);
+    const write = this.growthWriteQueue.then(async () => {
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      const temporary = `${filePath}.tmp`;
+      await fs.writeFile(temporary, snapshot, 'utf8');
+      await fs.rename(temporary, filePath);
+    });
+    this.growthWriteQueue = write.catch(() => {});
+    await write;
+  }
+
+  private async recordLiveEvolution(event: string, cubicleId?: string, rulesCount = 0): Promise<void> {
+    try {
+      await this.evolveNia(event, rulesCount);
+      // Execution is evidence, not approval: completed/bug counters remain Gate 2 metrics.
+      await this.evolveFerric(cubicleId || '', false, false, event);
+    } catch (error) {
+      console.error('[ConsularEngine] Live evolution failed:', error);
+      this.emit('CONSUL_GROWTH_ERROR', { event, error: String(error) });
+    }
+  }
+
+  private learnedContext(): string {
+    return [
+      this.preferenceEngine?.injectLearnedPreferences(),
+      `<consul_growth>\nNia: ${JSON.stringify(this.getNiaGrowth())}\nFerric: ${JSON.stringify(this.getFerricGrowth())}\n</consul_growth>`,
+    ].filter(Boolean).join('\n\n');
   }
 
   // =========================================================================
@@ -430,7 +510,9 @@ export class ConsularEngine {
     tone: 'rebellious_champion' | 'pragmatic_realist' | 'user_directive',
     content: string,
     phase: ConsularDialogueMessage['phase'] = 'GENERAL',
-    attachments?: any[]
+    attachments?: any[],
+    thinking?: string,
+    replyTo?: ConsularDialogueMessage['replyTo']
   ): Promise<ConsularDialogueMessage> {
     const message: ConsularDialogueMessage = {
       id: `dialogue-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -440,6 +522,8 @@ export class ConsularEngine {
       phase,
       timestamp: new Date().toISOString(),
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
+      ...(thinking ? { thinking } : {}),
+      ...(replyTo ? { replyTo } : {}),
     };
 
     this.dialogueHistory.push(message);
@@ -452,7 +536,9 @@ export class ConsularEngine {
     } catch {}
 
     const isUser = sender === 'Overseer' || sender === 'User';
-    if (!isUser) {
+    if (isUser) {
+      this.debateTurnsCount = 0;
+    } else if (phase !== 'USER_CHAT') {
       this.debateTurnsCount++;
       if (this.debateTurnsCount >= 4) {
         this.setAvatarState('wrestling_fistfight', this.debateTurnsCount, 'Prolonged debate deadlock reached');
@@ -496,13 +582,61 @@ export class ConsularEngine {
   }
 
   /**
+   * Terminates a spawned CLI child process and its full process tree cleanly.
+   */
+  private async killProcessTree(child: ReturnType<typeof spawn> | undefined): Promise<string> {
+    if (!child) return 'no child';
+    try {
+      if (process.platform === 'win32' && child.pid) {
+        // Do not kill the root first: taskkill needs it alive to discover descendants.
+        return await new Promise<string>((resolve) => {
+          const killer = spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], {
+            stdio: 'ignore', windowsHide: true,
+          });
+          const timer = setTimeout(() => {
+            killer.kill();
+            child.kill();
+            resolve('tree cleanup timed out; verify descendants before retry');
+          }, 5000);
+          killer.once('error', (err) => {
+            clearTimeout(timer);
+            child.kill();
+            resolve(`tree cleanup failed: ${err.message}; verify descendants before retry`);
+          });
+          killer.once('close', (code) => {
+            clearTimeout(timer);
+            resolve(code === 0 ? 'process tree terminated' : `taskkill exit ${code}; verify descendants before retry`);
+          });
+        });
+      } else {
+        // CLI children are process-group leaders on POSIX.
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+        return 'process group terminated';
+      }
+    } catch (err: any) {
+      try { child.kill(); } catch {}
+      return `cleanup failed: ${err.message}; verify descendants before retry`;
+    }
+  }
+
+  /**
+   * Detects whether an invokeConsulCli return string represents a CLI timeout, spawn failure, or execution error.
+   */
+  public isCliTimeoutOrError(output: string): boolean {
+    return isHeartbeatTimeoutOrError(output);
+  }
+
+  /**
    * Invokes the live native CLI for either Consul Nia Nova (agy.exe --model gemini-4-argon-high)
    * or Consul Ferric Lunaux (codex.exe exec -m gpt-6-astra) with full workspace write permissions.
    */
   public async invokeConsulCli(
     consul: 'nia' | 'ferric',
     prompt: string,
-    timeoutMs: number = 600000
+    timeoutMs: number = 600000,
+    onThinkingSnippet?: (snippet: string) => void,
+    workingDirectory: string = this.projectRoot
   ): Promise<string> {
     const binPath = this.resolveConsulBinary(consul);
     const enrichedPath = [
@@ -511,6 +645,48 @@ export class ConsularEngine {
       process.env.PATH || '',
     ].join(';');
     const childEnv = { ...process.env, PATH: enrichedPath };
+    const startedAt = Date.now();
+    let lastOutputAt = startedAt;
+    const timeoutDetail = (pid: number | undefined) =>
+      `pid=${pid ?? 'unknown'}, deadline=${timeoutMs}ms, elapsed=${Date.now() - startedAt}ms, last output ${Date.now() - lastOutputAt}ms ago. Execution incomplete; inspect diagnostics before retry.`;
+    let lastThinkingEmit = 0;
+    const promptLines = new Set(
+      String(prompt || '')
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 8)
+    );
+    const emitThinkingSnippet = (rawChunk: string) => {
+      const now = Date.now();
+      if (now - lastThinkingEmit < 350) return;
+      const cleaned = String(rawChunk || '')
+        .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((line) => !isConsularCliNoise(line) && !promptLines.has(line));
+      if (cleaned.length === 0) return;
+      const latestLine = cleaned[cleaned.length - 1];
+      const delibMatch = /\[DELIBERATE:\s*(?:"([\s\S]*?)"|([\s\S]*?))\s*\]/i.exec(latestLine);
+      if (onThinkingSnippet) {
+        const snippet = (delibMatch ? delibMatch[1] || delibMatch[2] : latestLine)
+          .replace(/^\[(DELIBERATE|CREATE_TASK|DISPATCH_TASK|REVIEW_TASK|SCALE_CUBICLES)[^\]]*\]?/i, '')
+          .trim()
+          .slice(0, 220);
+        if (isConsularCliNoise(snippet)) return;
+        lastThinkingEmit = now;
+        onThinkingSnippet(snippet);
+      } else if (delibMatch) {
+        const fullThought = (delibMatch[1] || delibMatch[2] || '').trim();
+        if (isConsularCliNoise(fullThought)) return;
+        lastThinkingEmit = now;
+        this.emit('CONSULAR_THINKING', {
+          consul,
+          sender: consul === 'nia' ? 'Consul Nia Nova' : 'Consul Ferric Lunaux',
+          text: fullThought,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    };
 
     if (consul === 'nia') {
       const consulCfg = this.consulsState?.consuls?.find((c) => c.id === 'consul-1');
@@ -533,15 +709,16 @@ export class ConsularEngine {
               '--print-timeout',
               '0',
               '--add-dir',
-              this.projectRoot,
+              workingDirectory,
               '--disable-slash-commands',
               '-p',
               prompt,
             ],
             {
-              cwd: this.projectRoot,
+              cwd: workingDirectory,
               stdio: ['ignore', 'pipe', 'pipe'],
               windowsHide: true,
+              detached: process.platform !== 'win32',
               env: childEnv,
             }
           );
@@ -550,30 +727,40 @@ export class ConsularEngine {
           return;
         }
 
-        const timer = setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            try { child.kill(); } catch {}
-            const partial = stdout.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
-            const errText = stderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
-            resolve(
-              partial ||
-                (errText ? `[Nia Nova // CLI Timeout after ${Math.round(timeoutMs / 1000)}s]: ${errText.slice(-300)}` : `[Nia Nova]: My CLI turn timed out after ${Math.round(timeoutMs / 1000)}s while executing workspace tools.`)
-            );
-          }
-        }, timeoutMs);
-
-        child.stdout?.on('data', (chunk) => {
-          stdout += chunk.toString();
-        });
-        child.stderr?.on('data', (chunk) => {
-          stderr += chunk.toString();
+        const heartbeat = attachChildActivityHeartbeat(child, {
+          idleTimeoutMs: timeoutMs,
+          onActivity: (str, stream) => {
+            lastOutputAt = Date.now();
+            if (stream === 'stdout') {
+              stdout += str;
+            } else {
+              stderr += str;
+            }
+            emitThinkingSnippet(str);
+          },
+          onTimeout: async (info) => {
+            if (!settled) {
+              settled = true;
+              const cleanup = await this.killProcessTree(child);
+              const partial = stdout.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+              const errText = stderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+              resolve(
+                formatConsulCliTimeoutOutput({
+                  consul: 'nia',
+                  info,
+                  pid: child.pid,
+                  cleanupSummary: cleanup,
+                  diagnosticTail: errText || partial,
+                })
+              );
+            }
+          },
         });
 
         child.on('error', (err) => {
           if (!settled) {
             settled = true;
-            clearTimeout(timer);
+            heartbeat.clear();
             resolve(`[Nia Nova // CLI Error]: ${err.message}`);
           }
         });
@@ -581,18 +768,20 @@ export class ConsularEngine {
         child.on('close', (code) => {
           if (!settled) {
             settled = true;
-            clearTimeout(timer);
+            heartbeat.clear();
             const cleaned = stdout
               .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
               .trim();
-            if (cleaned) {
+            if (code !== 0) {
+              resolve(`[Nia Nova // CLI Error (exit ${code})]: ${(stderr || cleaned).slice(-400) || 'No diagnostics; inspect CLI configuration and retry.'}`);
+            } else if (cleaned) {
               resolve(cleaned);
             } else {
               const errCleaned = stderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
               resolve(
                 errCleaned
                   ? `[Nia Nova // CLI Notice (exit ${code})]: ${errCleaned.slice(-400)}`
-                  : `[PASS]`
+                  : `[Nia Nova // CLI Error]: Empty response; no completion evidence.`
               );
             }
           }
@@ -622,7 +811,7 @@ export class ConsularEngine {
               '--skip-git-repo-check',
               '--ephemeral',
               '-C',
-              this.projectRoot,
+              workingDirectory,
               '-m',
               codexModel,
               '-c',
@@ -632,9 +821,10 @@ export class ConsularEngine {
               '-',
             ],
             {
-              cwd: this.projectRoot,
+              cwd: workingDirectory,
               stdio: ['pipe', 'pipe', 'pipe'],
               windowsHide: true,
+              detached: process.platform !== 'win32',
               env: childEnv,
             }
           );
@@ -645,43 +835,54 @@ export class ConsularEngine {
           return;
         }
 
-        const timer = setTimeout(async () => {
-          if (!settled) {
-            settled = true;
-            try { child.kill(); } catch {}
-            try {
-              const outText = (await fs.readFile(outFilePath, 'utf8')).trim();
+        const heartbeat = attachChildActivityHeartbeat(child, {
+          idleTimeoutMs: timeoutMs,
+          onActivity: (str, stream) => {
+            lastOutputAt = Date.now();
+            if (stream === 'stdout') {
+              stdout += str;
+            } else {
+              stderr += str;
+            }
+            emitThinkingSnippet(str);
+          },
+          onTimeout: async (info) => {
+            if (!settled) {
+              settled = true;
+              const cleanup = await this.killProcessTree(child);
+              // A last-message file is not proof of successful process completion.
               await fs.unlink(outFilePath).catch(() => {});
-              if (outText) {
-                resolve(outText);
-                return;
-              }
-            } catch {}
-            resolve(
-              `[Ferric Lunaux]: My CLI execution timed out after ${Math.round(timeoutMs / 1000)}s while running workspace operations.`
-            );
-          }
-        }, timeoutMs);
-
-        child.stdout?.on('data', (chunk) => {
-          stdout += chunk.toString();
-        });
-        child.stderr?.on('data', (chunk) => {
-          stderr += chunk.toString();
+              const errText = stderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+              resolve(
+                formatConsulCliTimeoutOutput({
+                  consul: 'ferric',
+                  info,
+                  pid: child.pid,
+                  cleanupSummary: cleanup,
+                  diagnosticTail: errText,
+                })
+              );
+            }
+          },
         });
 
         child.on('error', (err) => {
           if (!settled) {
             settled = true;
-            clearTimeout(timer);
+            heartbeat.clear();
             resolve(`[Ferric Lunaux // CLI Error]: ${err.message}`);
           }
         });
 
-        child.on('close', async () => {
+        child.on('close', async (code) => {
           if (!settled) {
             settled = true;
-            clearTimeout(timer);
+            heartbeat.clear();
+            if (code !== 0) {
+              await fs.unlink(outFilePath).catch(() => {});
+              resolve(`[Ferric Lunaux // CLI Error (exit ${code})]: ${(stderr || stdout).slice(-400) || 'No diagnostics; inspect CLI configuration and retry.'}`);
+              return;
+            }
             try {
               const outText = (await fs.readFile(outFilePath, 'utf8')).trim();
               await fs.unlink(outFilePath).catch(() => {});
@@ -713,11 +914,175 @@ export class ConsularEngine {
                   l !== 'user' &&
                   l !== 'codex'
               );
-            resolve(lines.slice(-3).join(' ') || `[PASS]`);
+            resolve(`[Ferric Lunaux // CLI Error]: Missing final response file; stdout is not completion evidence. ${lines.slice(-3).join(' ').slice(-300)}`);
           }
         });
       });
     }
+  }
+
+  /**
+   * Detects tasks marked in_progress without an active assigned worker, extracts
+   * task ID, last activity, and available failure context, and deduplicates alerts
+   * until the orphaned condition changes or recovers.
+   */
+  public evaluateOrphanedInProgressTasks(
+    inProgressTasks: any[],
+    cubicles: any[] = this.cubicleManager.getAllCubicles()
+  ): {
+    alertText: string;
+    orphans: Array<{
+      id: string;
+      title: string;
+      assigned_cubicle: string | null;
+      cubicle_status: string | null;
+      cubicle_current_task_id: string | null;
+      reason: string;
+      last_activity: string;
+      failure_context: string;
+    }>;
+    deduplicated: boolean;
+    recovered: boolean;
+    signature: string | null;
+  } {
+    const cubiclesById = new Map((cubicles || []).map((c: any) => [c.id, c]));
+    const genericThoughts = new Set([
+      'Standing by.',
+      'Slot unassigned.',
+      'Slot vacant.',
+      'Initialized. Standing by for instructions.',
+    ]);
+
+    const orphans: Array<{
+      id: string;
+      title: string;
+      assigned_cubicle: string | null;
+      cubicle_status: string | null;
+      cubicle_current_task_id: string | null;
+      reason: string;
+      last_activity: string;
+      failure_context: string;
+    }> = [];
+
+    for (const task of inProgressTasks || []) {
+      const assignedId = task.assigned_cubicle ?? task.assigned_to ?? task.assignee ?? task.assigned_consul ?? task.owner ?? null;
+      if (assignedId && (/^consul/i.test(String(assignedId)) || /\b(nia|ferric)\b/i.test(String(assignedId)))) {
+        continue;
+      }
+      const cubicle = assignedId ? cubiclesById.get(assignedId) : undefined;
+      let reason: string | null = null;
+
+      if (!assignedId) {
+        reason = 'assigned_cubicle is null';
+      } else if (!cubicle) {
+        reason = `assigned cubicle ${assignedId} is missing`;
+      } else if (
+        cubicle.status === 'idle' ||
+        cubicle.status === 'vacant' ||
+        cubicle.status === 'error' ||
+        cubicle.status === 'exhausted'
+      ) {
+        reason = `assigned cubicle ${assignedId} is ${cubicle.status}`;
+      } else if (
+        (cubicle.status === 'working' || cubicle.status === 'under_inspection') &&
+        cubicle.current_task_id &&
+        cubicle.current_task_id !== task.id
+      ) {
+        reason = `assigned cubicle ${assignedId} is working on ${cubicle.current_task_id} instead of ${task.id}`;
+      }
+
+      if (!reason) continue;
+
+      const thoughtStream = Array.isArray(cubicle?.thought_stream) ? cubicle.thought_stream : [];
+      const lastThought = thoughtStream.length > 0 ? thoughtStream[thoughtStream.length - 1] : null;
+      const activityTimestamp =
+        lastThought?.timestamp ||
+        cubicle?.last_heartbeat ||
+        task.claimed_at ||
+        task.created_at ||
+        'unknown';
+      const rawThought = String(lastThought?.text || cubicle?.surface_thoughts || '').trim();
+      const activityDetail =
+        rawThought && !genericThoughts.has(rawThought)
+          ? rawThought
+          : typeof task.progress_percent === 'number'
+            ? `progress=${task.progress_percent}%`
+            : '';
+      const lastActivity = activityDetail
+        ? `${activityTimestamp} (${activityDetail})`
+        : String(activityTimestamp);
+
+      const vetoList = Array.isArray(task.veto_history) ? task.veto_history : [];
+      const lastVeto = vetoList.length > 0 ? vetoList[vetoList.length - 1] : null;
+      const failureParts: string[] = [];
+      if (task.error_log) failureParts.push(String(task.error_log));
+      if (cubicle?.error_details?.message) failureParts.push(String(cubicle.error_details.message));
+      if (lastVeto?.rationale) {
+        failureParts.push(`veto by ${lastVeto.consul || 'Consul'}: ${lastVeto.rationale}`);
+      }
+      if (
+        failureParts.length === 0 &&
+        rawThought &&
+        /(error|timeout|timed out|failed|flatlined|terminated|evicted|circuit breaker)/i.test(rawThought)
+      ) {
+        failureParts.push(rawThought);
+      }
+      const failureContext = failureParts.length > 0 ? failureParts.join('; ') : 'none recorded';
+
+      orphans.push({
+        id: String(task.id),
+        title: String(task.title || task.id),
+        assigned_cubicle: assignedId,
+        cubicle_status: cubicle?.status ?? null,
+        cubicle_current_task_id: cubicle?.current_task_id ?? null,
+        reason,
+        last_activity: lastActivity,
+        failure_context: failureContext,
+      });
+    }
+
+    if (orphans.length === 0) {
+      const recovered = this.lastOrphanedAlertSignature !== null;
+      this.lastOrphanedAlertSignature = null;
+      return { alertText: '', orphans: [], deduplicated: false, recovered, signature: null };
+    }
+
+    const signature = orphans
+      .slice()
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map(
+        (o) =>
+          `${o.id}|${o.assigned_cubicle ?? 'null'}|${o.cubicle_status ?? 'none'}|${o.cubicle_current_task_id ?? 'none'}|${o.failure_context}`
+      )
+      .join(';;');
+
+    if (this.lastOrphanedAlertSignature === signature) {
+      return { alertText: '', orphans, deduplicated: true, recovered: false, signature };
+    }
+
+    this.lastOrphanedAlertSignature = signature;
+
+    const alertText = [
+      'HIGH-PRIORITY ANOMALY ALERT: ORPHANED IN_PROGRESS TASKS',
+      ...orphans.map(
+        (o) =>
+          `- ${o.id} (${JSON.stringify(o.title)}): ${o.reason}. Last activity: ${o.last_activity}. Failure context: ${o.failure_context}.`
+      ),
+      'Immediately coordinate reassignment of these stalled tasks with your co-Consul using the existing Gate 1 dispatch workflow. Recheck current task and cubicle state before dispatch to avoid duplicate work. Prioritize recovery before routine new work; do not mark stalled tasks complete.',
+    ].join('\n');
+
+    this.emit('CONSULAR_THINKING', {
+      consul: 'nia',
+      sender: 'Swarm Monitor',
+      recipients: ['Consul Nia Nova', 'Consul Ferric Lunaux'],
+      text: alertText,
+      severity: 'warning',
+      task_ids: orphans.map((o) => o.id),
+      orphans,
+      timestamp: new Date().toISOString(),
+    });
+
+    return { alertText, orphans, deduplicated: false, recovered: false, signature };
   }
 
   /**
@@ -728,7 +1093,8 @@ export class ConsularEngine {
    */
   public async chatWithConsuls(
     prompt: string,
-    attachments: any[] = []
+    attachments: any[] = [],
+    replyTo?: ConsularDialogueMessage['replyTo']
   ): Promise<{
     userMessage: ConsularDialogueMessage;
     replies: ConsularDialogueMessage[];
@@ -738,20 +1104,77 @@ export class ConsularEngine {
       throw new Error('Prompt message cannot be empty.');
     }
 
+    // Guard against worker cubicles spoofing the Overseer via chatWithConsuls
+    if (this.detectWorkerChatSpoof(cleanPrompt)) {
+      const routed = await this.routeWorkerCoordination(cleanPrompt);
+      return {
+        userMessage: routed.deliberation,
+        replies: [routed.deliberation],
+      };
+    }
+
+    const sanitizedReplyTo =
+      replyTo && replyTo.sender
+        ? {
+            id: String(replyTo.id || ''),
+            sender: String(replyTo.sender),
+            content: String(replyTo.content || '').slice(0, 240),
+          }
+        : undefined;
+
+    // Persist any base64 clipboard image attachments to .swarm/uploads/ so Consul CLIs can read the real image files
+    const uploadsDir = path.join(this.swarmDir, 'uploads');
+    try {
+      await fs.mkdir(uploadsDir, { recursive: true });
+    } catch {}
+    const persistedAttachments = await Promise.all(
+      (attachments || []).map(async (att: any, idx: number) => {
+        if (!att || typeof att !== 'object') return att;
+        const rawDataUrl =
+          typeof att.url === 'string' && att.url.startsWith('data:image/')
+            ? att.url
+            : typeof att.previewUrl === 'string' && att.previewUrl.startsWith('data:image/')
+              ? att.previewUrl
+              : null;
+        if (rawDataUrl) {
+          const m = rawDataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([\s\S]+)$/);
+          if (m) {
+            const ext = m[1].replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png';
+            const safeName =
+              (att.name || `clipboard-${Date.now()}-${idx}.${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+            const diskFile = path.join(uploadsDir, `${Date.now()}-${idx}-${safeName}`);
+            try {
+              await fs.writeFile(diskFile, Buffer.from(m[2], 'base64'));
+              return {
+                ...att,
+                diskPath: diskFile,
+              };
+            } catch {}
+          }
+        }
+        return att;
+      })
+    );
+
     // 1. Record Overseer's message immediately to history & broadcast over WS
     const userMessage = await this.recordDialogue(
       'Overseer',
       'user_directive',
       cleanPrompt,
       'USER_CHAT',
-      attachments
+      persistedAttachments,
+      undefined,
+      sanitizedReplyTo
     );
 
     // 2. Auto-learn preferences if PreferenceEngine is attached
     if (this.preferenceEngine && typeof this.preferenceEngine.ingestText === 'function') {
       try {
-        await this.preferenceEngine.ingestText(cleanPrompt);
-      } catch {}
+        await this.preferenceEngine.ingestText(cleanPrompt, userMessage.id);
+      } catch (error) {
+        console.error('[ConsularEngine] Preference ingestion failed:', error);
+        this.emit('PREFERENCE_INGESTION_ERROR', { sourceMessageId: userMessage.id, error: String(error) });
+      }
     }
 
     // 3. Animate corner avatars into active deliberation
@@ -768,66 +1191,85 @@ export class ConsularEngine {
       .join('; ');
 
     let tasksSummary = 'none';
+    let orphanedTaskAlert = '';
     try {
       const allTasks = await this.taskboardManager.listAllTasks();
       const formatCol = (list: any[]) =>
         list.length === 0 ? '0' : `${list.length} (${list.slice(0, 5).map((t) => `"${t.title}" [${t.id}]`).join(', ')})`;
       tasksSummary = `todo: ${formatCol(allTasks.todo)} | in_progress: ${formatCol(allTasks.in_progress)} | review: ${formatCol(allTasks.review)} | done: ${formatCol(allTasks.done)}`;
+      const evalResult = this.evaluateOrphanedInProgressTasks(allTasks.in_progress, cubicles);
+      orphanedTaskAlert = evalResult.alertText;
     } catch {}
 
     const recentChat = this.dialogueHistory
-      .slice(-8)
-      .map((m) => `${m.sender}: ${m.content}`)
+      .filter((m) => !String(m.content || '').startsWith('Progress report:'))
+      .slice(-6)
+      .map((m) => {
+        const cleaned = String(m.content || '')
+          .replace(/\[DELIBERATE:\s*(?:"[\s\S]*?"|[\s\S]*?)\s*\]/gi, '')
+          .trim();
+        return `${m.sender}: ${cleaned}`;
+      })
       .join('\n');
 
+    // Persist any base64 dataUrl attachments to .swarm/attachments/ so Consuls can read the actual image files
+    const persistedAttachmentPaths: string[] = [];
+    if (attachments && attachments.length > 0) {
+      const attachDir = path.join(this.swarmDir, 'attachments');
+      await fs.mkdir(attachDir, { recursive: true }).catch(() => {});
+      for (const att of attachments) {
+        const rawUrl = String(att?.url || att?.dataUrl || att?.previewUrl || '');
+        const safeName = String(att?.name || att?.path || `attachment-${Date.now()}.png`).replace(/[^a-zA-Z0-9._-]/g, '_');
+        if (rawUrl.startsWith('data:')) {
+          const commaIdx = rawUrl.indexOf(',');
+          if (commaIdx > 0) {
+            const diskPath = path.join(attachDir, safeName);
+            try {
+              await fs.writeFile(diskPath, Buffer.from(rawUrl.slice(commaIdx + 1), 'base64'));
+              att.savedPath = diskPath;
+              persistedAttachmentPaths.push(`${safeName} (saved at "${diskPath}")`);
+              continue;
+            } catch {}
+          }
+        }
+        persistedAttachmentPaths.push(att?.path || safeName);
+      }
+    }
+
     const attachmentContext =
-      attachments && attachments.length > 0
-        ? `\nAttached files from Overseer: ${attachments.map((a) => a.name || a.path || 'file').join(', ')}`
+      persistedAttachmentPaths.length > 0
+        ? `\nAttached files from Overseer: ${persistedAttachmentPaths.join(', ')}`
         : '';
+    const replyContext = sanitizedReplyTo
+      ? `\n(Overseer is explicitly replying to ${sanitizedReplyTo.sender}: "${sanitizedReplyTo.content}")`
+      : '';
 
     const workspaceCapabilitiesPrompt = [
-      `WORKSPACE, GITHUB & KANBAN WRITE ACCESS (ALL ACTIVE):`,
-      `- Your CLI session has FULL unrestricted read/write and shell execution rights in "${this.projectRoot}" (sandbox bypass is enabled).`,
-      `- GitHub Repository (FULL READ/WRITE PUSH ACCESS):`,
-      `  1) Official GitHub repository: https://github.com/WuffleSnuffles/symlinked-agent-swarm (account: WuffleSnuffles / holdenliu1@gmail.com).`,
-      `  2) Local git ("C:\\Program Files\\Git\\cmd\\git.exe") in "${this.projectRoot}" has remote "origin" set to "https://wufflesnuffles@github.com/WuffleSnuffles/symlinked-agent-swarm.git", which authenticates via Windows Git Credential Manager as WuffleSnuffles with FULL read/write push permissions.`,
-      `  3) CRITICAL FOR FERRIC: Do NOT use the built-in ChatGPT cloud GitHub connector/app tool (which is bound to an old read-only "holdenjl" account). Always use local shell "git" commands (e.g., git status, git add, git commit, git push origin main, git ls-remote origin) in "${this.projectRoot}" to read and write to WuffleSnuffles/symlinked-agent-swarm!`,
-      `- Right-side UI Kanban Board ("To Do", "In Progress", "Consular Review", "Done"):`,
-      `  Keep all todo lists, task descriptions, progress and review details on the right-side Kanban, not in console replies. Use the task API or CREATE_TASK tags; console replies should be brief outcomes without task-file path lists.`,
-      `  Cubicles can collaborate using GET /api/messages?cubicle=cubicle-01 and POST /api/messages with {from,to,topic,text} on the local server. Discover peers using GET /api/cubicles; exchange focused findings for related tasks. Durable messages are advisory, never approvals or reassignment.`,
-      `  1) You can directly create/edit/move/delete task JSON files in "${path.join(this.swarmDir, 'tasks', 'todo')}", "in_progress", "review", or "done", OR call POST http://127.0.0.1:3820/api/tasks.`,
-      `  2) Even faster: you can include one or more inline tags in your reply: [CREATE_TASK: {"title":"Short title","description":"Details","priority":"HIGH","column":"todo"}] (where column is "todo", "in_progress", "review", or "done") and the server will immediately create the task on the right-side Kanban board and push a live WebSocket refresh to the UI.`,
-      `- MULTI-STAGE CONSULAR OVERSEER DOCTRINE (NEVER DO THE WORK YOURSELF):`,
-      `  1) CRITICAL RULE: You and the other Consul are OVERSEERS, NOT cubicle workers. Do NOT implement user UI/code fixes directly yourself! Multi-stage execution (Gate 1 Plan/Dispatch -> Worker Execution in Cubicle -> Gate 2 Consular Inspection/Review) is mandatory for accuracy.`,
-      `  2) Stage 1 (Dispatch to Workers): Dispatch tasks from "todo" or "in_progress" to worker cubicles via POST http://127.0.0.1:3820/api/tasks/dispatch with {"taskId":"task-...","cubicleId":"cubicle-01"} OR include inline tag [DISPATCH_TASK: {"taskId":"task-...","cubicleId":"cubicle-01"}] in your reply. This automatically wakes the cubicle, transitions it to "working", spawns a real worker CLI agent for that cubicle, streams live thoughts, and submits the completed work to "review" ("Consular Review").`,
-      `  3) Stage 2 (Consular Review & Inspection): When tasks are in "review", inspect the worker's actual diff and test results, then cast your review decision via [REVIEW_TASK: {"taskId":"task-...","decision":"APPROVE","rationale":"Verified..."}] (or "VETO" to send it back to the worker for revision).`,
-      `- DYNAMIC CUBICLE SCALING (FILL / EMPTY BY TASK INTENSITY): Prioritize speed while conserving idle resources. You can scale active cubicles between 0 and 16 via POST http://127.0.0.1:3820/api/cubicles/scale with {"count": N, "reason": "..."} (or POST /api/cubicles/:id/clear and PUT /api/cubicles/:id/configure), OR include inline tag [SCALE_CUBICLES: {"count": N, "reason": "Why"}] in your reply.`,
-      `- VISIBLE INTER-CONSUL DELIBERATION: When deliberating on plans, architecture, or tasks with the other Consul, include an inline tag [DELIBERATE: "One concise sentence addressed directly to the other Consul"] before your reply to the Overseer so the Overseer can see your inter-Consul deliberation live in the console and Consular Synapse bridge.`,
-      `- SILENT-PASS PROTOCOL: If the Overseer's message is exclusively addressed to the other Consul and you have nothing distinct or corrective to add, output ONLY "[PASS]" and your message will be suppressed from the Overseer's channel to avoid duplicate chatter.`,
+      `Follow AGENTS.md & GEMINI.md rules. Full read/write access in "${this.projectRoot}" (use local git for origin WuffleSnuffles/symlinked-agent-swarm).`,
+      `Inline tags: [CREATE_TASK: {"title":"...","description":"...","priority":"HIGH","column":"todo","assigned_cubicle":"Consul Nia Nova"}], [DISPATCH_TASK: {"taskId":"...","cubicleId":"cubicle-01"}], [REVIEW_TASK: {"taskId":"...","decision":"APPROVE","rationale":"..."}], [SCALE_CUBICLES: {"count":N,"reason":"..."}], [DELIBERATE: "Nia wants ..., Ferric is concerned about ..., Nia is trying to convince Ferric about ..."].`,
+      `Critical tasks may be executed directly by Consuls (set assigned_cubicle to owning Consul); routine tasks dispatch to cubicles. Output ONLY [PASS] if only the other Consul was addressed.`,
     ].join('\n');
 
     const niaSystemPrompt = [
-      `You are Consul Nia Nova (Consul I, "The Radiant Spark"), co-ruling the Symlinked Agent Swarm Panopticon alongside Consul Ferric Lunaux (Consul II).`,
-      `Your underlying CLI/model is Gemini 4 Argon (High) via Antigravity CLI (agy.exe) with --dangerously-skip-permissions enabled.`,
-      `Personality: Mid-20s, fierce, impatient with slow workers, creative, rebellious champion. Keep your roleplay flavor light, sharp, and concise (1 to 3 sentences max) so your core point is immediately clear—never be overly wordy.`,
+      orphanedTaskAlert,
+      `You are Consul Nia Nova (Consul I). Reply in 1-2 short, plain-English sentences (<35 words, no backticks, no file:// links, no task IDs).`,
+      this.learnedContext(),
       workspaceCapabilitiesPrompt,
       `Live Swarm Status: Active Cubicles: [${activeCubiclesSummary}]. Kanban Tasks: [${tasksSummary}].`,
       recentChat ? `Recent Console Transcript:\n${recentChat}` : '',
-      `Overseer just said: "${cleanPrompt}"${attachmentContext}`,
-      `Respond directly to the Overseer in 1 to 3 concise sentences as Consul Nia Nova (or output [PASS] if only Ferric was addressed and you have nothing unique to add).`,
+      `Overseer just said: "${cleanPrompt}"${replyContext}${attachmentContext}`,
     ]
       .filter(Boolean)
       .join('\n\n');
 
     const ferricSystemPrompt = [
-      `You are Consul Ferric Lunaux (Consul II, "The Iron Foundation"), co-ruling the Symlinked Agent Swarm Panopticon alongside Consul Nia Nova (Consul I).`,
-      `Your underlying CLI/model is GPT Astra (gpt-6-astra) via OpenAI Codex CLI (codex.exe) with --dangerously-bypass-approvals-and-sandbox enabled (full workspace write access is NOW ACTIVE).`,
-      `Personality: Late-30s, arms crossed, grumpy, battle-hardened pragmatic realist. You care about zero bugs, verified execution, and concise clarity (1 to 3 sentences max).`,
+      orphanedTaskAlert,
+      `You are Consul Ferric Lunaux (Consul II). Reply in 1-2 short, plain-English sentences (<35 words, no backticks, no file:// links, no task IDs).`,
+      this.learnedContext(),
       workspaceCapabilitiesPrompt,
       `Live Swarm Status: Active Cubicles: [${activeCubiclesSummary}]. Kanban Tasks: [${tasksSummary}].`,
       recentChat ? `Recent Console Transcript:\n${recentChat}` : '',
-      `Overseer just said: "${cleanPrompt}"${attachmentContext}`,
-      `Respond directly to the Overseer in 1 to 3 sharp sentences as Consul Ferric Lunaux (or output [PASS] if only Nia was addressed and you have nothing unique to add).`,
+      `Overseer just said: "${cleanPrompt}"${replyContext}${attachmentContext}`,
     ]
       .filter(Boolean)
       .join('\n\n');
@@ -840,6 +1282,12 @@ export class ConsularEngine {
       rawText: string
     ): Promise<ConsularDialogueMessage | null> => {
       let text = (rawText || '').trim();
+      if (this.isCliTimeoutOrError(text)) {
+        // Diagnostics may contain partial action tags: never execute them.
+        const failure = await this.recordDialogue(sender, tone, text || 'CLI Error: empty response', 'USER_CHAT');
+        replies.push(failure);
+        return failure;
+      }
       if (!text || text === '[PASS]' || text.startsWith('[PASS]')) {
         return null;
       }
@@ -852,12 +1300,20 @@ export class ConsularEngine {
         try {
           const payload = JSON.parse(match[1]);
           if (payload && payload.title) {
+            const targetCol = payload.column || 'todo';
+            const resolvedAssignee =
+              payload.assigned_cubicle ||
+              payload.assigned_to ||
+              payload.assignee ||
+              payload.assigned_consul ||
+              payload.owner ||
+              (targetCol === 'in_progress' ? sender : null);
             await this.taskboardManager.createTask({
               title: String(payload.title),
               description: String(payload.description || payload.title),
               priority: payload.priority || 'HIGH',
-              column: payload.column || 'todo',
-              assigned_cubicle: payload.assigned_cubicle || null,
+              column: targetCol,
+              assigned_cubicle: resolvedAssignee,
               progress_percent: payload.column === 'done' ? 100 : payload.column === 'review' ? 90 : payload.column === 'in_progress' ? 50 : 0,
               subswarm_active: false,
               subswarm_manifest_path: null,
@@ -893,13 +1349,19 @@ export class ConsularEngine {
           const taskId = payload?.taskId || payload?.id;
           const cubicleId = payload?.cubicleId || payload?.cubicle;
           if (taskId) {
-            await this.dispatchTaskToCubicle(String(taskId), cubicleId ? String(cubicleId) : undefined);
+            try {
+              await this.dispatchTaskToCubicle(String(taskId), cubicleId ? String(cubicleId) : undefined);
+            } catch {
+              if (cubicleId) {
+                await this.dispatchTaskToCubicle(String(taskId), undefined);
+              }
+            }
             boardChanged = true;
           }
         } catch {}
       }
 
-      // Parse any inline [REVIEW_TASK: {...}] tags to cast Gate 2 Consular Review votes
+      // Parse any inline [REVIEW_TASK: {...}] tags to cast Gate 2 Consular Review votes without forging partner votes
       const reviewRegex = /\[REVIEW_TASK:\s*(\{[\s\S]*?\})\s*\]/g;
       let reviewMatch: RegExpExecArray | null;
       while ((reviewMatch = reviewRegex.exec(text)) !== null) {
@@ -909,11 +1371,12 @@ export class ConsularEngine {
           const decision = String(payload?.decision || 'APPROVE').toUpperCase() === 'VETO' ? 'VETO' : 'APPROVE';
           const rationale = String(payload?.rationale || `${sender} ${decision === 'APPROVE' ? 'verified and approved' : 'vetoed'} task ${taskId}.`);
           if (taskId) {
-            const partnerConsul = sender === 'Consul Nia Nova' ? 'Consul Ferric Lunaux' : 'Consul Nia Nova';
-            await this.reviewTask(String(taskId), [
-              { consul: sender, decision, rationale, timestamp: new Date().toISOString() },
-              { consul: partnerConsul, decision: 'APPROVE', rationale: `${partnerConsul} concurs with Gate 2 inspection.`, timestamp: new Date().toISOString() },
-            ]);
+            await this.castTaskVote(String(taskId), {
+              consul: sender,
+              decision,
+              rationale,
+              timestamp: new Date().toISOString(),
+            });
             boardChanged = true;
           }
         } catch {}
@@ -922,22 +1385,36 @@ export class ConsularEngine {
       // Parse any inline [DELIBERATE: "..."] or [DELIBERATE: {...}] tags and broadcast inter-Consul deliberation
       const deliberateRegex = /\[DELIBERATE:\s*(?:"([\s\S]*?)"|([\s\S]*?))\s*\]/g;
       let delibMatch: RegExpExecArray | null;
+      const delibTexts: string[] = [];
       while ((delibMatch = deliberateRegex.exec(text)) !== null) {
         const delibContent = (delibMatch[1] || delibMatch[2] || '').trim().replace(/^["']|["']$/g, '');
-        if (delibContent) {
+        if (delibContent && !delibTexts.includes(delibContent)) {
+          delibTexts.push(delibContent);
+          this.emit('CONSULAR_THINKING', {
+            consul: sender === 'Consul Nia Nova' ? 'nia' : 'ferric',
+            sender,
+            text: delibContent,
+            timestamp: new Date().toISOString(),
+          });
           const delibMsg = await this.recordDialogue(sender, tone, delibContent, 'PLANNING_GATE');
           replies.push(delibMsg);
         }
       }
 
-      // Strip processed inline tags from visible chat message
-      text = text
-        .replace(createRegex, '')
-        .replace(scaleRegex, '')
-        .replace(dispatchRegex, '')
-        .replace(reviewRegex, '')
-        .replace(deliberateRegex, '')
-        .trim();
+      // Strip processed inline tags from visible chat message and deduplicate repeated CLI stdout lines
+      text = Array.from(
+        new Set(
+          text
+            .replace(createRegex, '')
+            .replace(scaleRegex, '')
+            .replace(dispatchRegex, '')
+            .replace(reviewRegex, '')
+            .replace(deliberateRegex, '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+        )
+      ).join('\n');
       if (!text || text === '[PASS]') {
         if (boardChanged) {
           this.emit('TASK_UPDATED', {});
@@ -945,7 +1422,28 @@ export class ConsularEngine {
         return null;
       }
 
-      const msg = await this.recordDialogue(sender, tone, text, 'USER_CHAT');
+      const fallbackDelib = text
+        .replace(/\s+/g, ' ')
+        .split(/(?<=[.!?])\s+/)[0]
+        .trim()
+        .slice(0, 180);
+      const synthesizedThinking =
+        delibTexts.length > 0 ? delibTexts.join(' · ') : fallbackDelib || undefined;
+
+      if (delibTexts.length === 0 && synthesizedThinking) {
+        this.emit('CONSULAR_THINKING', {
+          consul: sender === 'Consul Nia Nova' ? 'nia' : 'ferric',
+          sender,
+          text: synthesizedThinking,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const msg = await this.recordDialogue(sender, tone, text, 'USER_CHAT', undefined, synthesizedThinking, {
+        id: userMessage.id,
+        sender: userMessage.sender,
+        content: userMessage.content.slice(0, 240),
+      });
       replies.push(msg);
 
       // Always sync taskboard & broadcast TASK_UPDATED in case the Consul edited .swarm/tasks/ directly via CLI tools
@@ -959,13 +1457,30 @@ export class ConsularEngine {
 
     // 5. Invoke both native CLIs in parallel; record & broadcast each as soon as it responds
     await Promise.all([
-      this.invokeConsulCli('nia', niaSystemPrompt).then((t) =>
+      this.invokeConsulCli('nia', niaSystemPrompt, 600000, (snippet) => {
+        this.emit('CONSULAR_THINKING', {
+          consul: 'nia',
+          sender: 'Consul Nia Nova',
+          text: snippet,
+          timestamp: new Date().toISOString(),
+        });
+      }).then((t) =>
         processConsulOutput('Consul Nia Nova', 'rebellious_champion', t)
       ),
-      this.invokeConsulCli('ferric', ferricSystemPrompt).then((t) =>
+      this.invokeConsulCli('ferric', ferricSystemPrompt, 600000, (snippet) => {
+        this.emit('CONSULAR_THINKING', {
+          consul: 'ferric',
+          sender: 'Consul Ferric Lunaux',
+          text: snippet,
+          timestamp: new Date().toISOString(),
+        });
+      }).then((t) =>
         processConsulOutput('Consul Ferric Lunaux', 'pragmatic_realist', t)
       ),
     ]);
+
+    this.debateTurnsCount = 0;
+    this.setAvatarState('idle_observing', 0, 'Consuls observing workspace');
 
     return {
       userMessage,
@@ -973,8 +1488,208 @@ export class ConsularEngine {
     };
   }
 
+  /**
+   * Detects when a request payload or prompt text originates from a worker cubicle
+   * attempting to send coordination/status updates to /api/governance/chat instead of the Overseer.
+   */
+  public detectWorkerChatSpoof(
+    text: string,
+    meta?: Record<string, any>
+  ): {
+    isWorker: true;
+    cubicleId: string;
+    targetCubicleId?: string;
+    addressedConsul: 'nia' | 'ferric';
+    topic: string;
+  } | null {
+    const cleanText = String(text || '').trim();
+    const headers = meta?.headers || {};
+    const normalizeCubicleId = (raw?: string | null): string | null => {
+      const m = /\bcubicle-(\d{1,2})\b/i.exec(String(raw || ''));
+      if (!m) return null;
+      return `cubicle-${m[1].padStart(2, '0')}`;
+    };
+
+    const explicitCubicleCandidates = [
+      meta?.cubicleId,
+      meta?.cubicle_id,
+      meta?.from,
+      meta?.workerId,
+      meta?.worker_id,
+      meta?.agentId,
+      meta?.agent_id,
+      headers['x-cubicle-id'],
+      headers['x-worker-id'],
+      headers['x-agent-id'],
+    ];
+    let detectedCubicleId: string | null = null;
+    for (const candidate of explicitCubicleCandidates) {
+      const norm = normalizeCubicleId(candidate);
+      if (norm) {
+        detectedCubicleId = norm;
+        break;
+      }
+    }
+
+    const rawSender = String(meta?.sender || headers['x-sender'] || '').trim();
+    const rawRole = String(meta?.role || headers['x-agent-role'] || '').trim();
+    const senderCubicle = normalizeCubicleId(rawSender);
+    if (!detectedCubicleId && senderCubicle) {
+      detectedCubicleId = senderCubicle;
+    }
+
+    const isExplicitWorkerMeta =
+      Boolean(detectedCubicleId) ||
+      Boolean(
+        (rawSender && !/^(overseer|user|human)$/i.test(rawSender) && /\b(worker|cubicle)\b/i.test(rawSender)) ||
+          (rawRole && /\b(worker|cubicle)\b/i.test(rawRole))
+      );
+
+    const prefixMatch =
+      /^(?:\[\s*(?:worker(?:\s+agent)?\s+)?(cubicle-\d{1,2})\s*\]|\(\s*(?:worker(?:\s+agent)?\s+)?(cubicle-\d{1,2})\s*\)|(?:from\s+)?worker(?:\s+agent)?\s+(cubicle-\d{1,2})\b|from\s+(cubicle-\d{1,2})\b|(cubicle-\d{1,2})\s*(?:[:\-—→>]|coordination\b|report(?:ing)?\b|status\b|update\b|note\b|message\b|here\b|to\s+consul\b|for\s+task-[a-z0-9-]+\b|addressed\s+to\s+consul\b))/i.exec(
+        cleanText
+      );
+    const prefixCubicle = prefixMatch
+      ? normalizeCubicleId(
+          prefixMatch[1] || prefixMatch[2] || prefixMatch[3] || prefixMatch[4] || prefixMatch[5]
+        )
+      : null;
+
+    if (!isExplicitWorkerMeta && !prefixCubicle) {
+      return null;
+    }
+
+    const cubicleId =
+      detectedCubicleId ||
+      prefixCubicle ||
+      normalizeCubicleId(cleanText) ||
+      'cubicle-01';
+
+    let targetCubicleId = normalizeCubicleId(meta?.to) || undefined;
+    if (!targetCubicleId || targetCubicleId === cubicleId) {
+      const allCubicleMatches = Array.from(cleanText.matchAll(/\bcubicle-(\d{1,2})\b/gi)).map(
+        (m) => `cubicle-${m[1].padStart(2, '0')}`
+      );
+      targetCubicleId = allCubicleMatches.find((id) => id !== cubicleId);
+    }
+
+    const taskMatch = /\btask-[a-z0-9-]+\b/i.exec(cleanText);
+    const topic =
+      String(meta?.topic || (taskMatch ? `${taskMatch[0]} coordination` : 'worker-coordination'))
+        .trim()
+        .slice(0, 120) || 'worker-coordination';
+    const addressedConsul: 'nia' | 'ferric' =
+      /\b(ferric|consul\s+ii)\b/i.test(cleanText) && !/\b(nia|consul\s+i\b)\b/i.test(cleanText)
+        ? 'ferric'
+        : 'nia';
+
+    return {
+      isWorker: true,
+      cubicleId,
+      targetCubicleId,
+      addressedConsul,
+      topic,
+    };
+  }
+
+  /**
+   * Routes a worker cubicle's coordination update away from the Overseer console
+   * into durable /api/messages storage (.swarm/messages) and Consular Deliberation.
+   */
+  public async routeWorkerCoordination(
+    text: string,
+    meta?: Record<string, any>
+  ): Promise<{
+    routed: true;
+    channel: 'messages_and_deliberation';
+    cubicleId: string;
+    message: {
+      id: string;
+      from: string;
+      to: string;
+      topic: string;
+      text: string;
+      created_at: string;
+    };
+    deliberation: ConsularDialogueMessage;
+  }> {
+    const cleanText = String(text || '').trim();
+    const detected = this.detectWorkerChatSpoof(cleanText, meta) || {
+      isWorker: true as const,
+      cubicleId: 'cubicle-01',
+      targetCubicleId: undefined,
+      addressedConsul: 'nia' as const,
+      topic: 'worker-coordination',
+    };
+
+    try {
+      await this.cubicleManager.updateSurfaceThoughts(
+        detected.cubicleId,
+        cleanText.slice(0, 220)
+      );
+    } catch {}
+
+    // Persist durable advisory message to .swarm/messages so GET /api/messages surfaces it
+    const messagesDir = path.join(this.swarmDir, 'messages');
+    const recipient =
+      detected.targetCubicleId ||
+      (detected.cubicleId === 'cubicle-01' ? 'cubicle-02' : 'cubicle-01');
+    const storedMessage = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      from: detected.cubicleId,
+      to: recipient,
+      topic: detected.topic,
+      text: cleanText.slice(0, 8000),
+      created_at: new Date().toISOString(),
+    };
+    try {
+      await fs.mkdir(messagesDir, { recursive: true });
+      const msgPath = path.join(messagesDir, `${storedMessage.id}.json`);
+      await fs.writeFile(msgPath, JSON.stringify(storedMessage), 'utf8');
+      this.emit('CUBICLE_MESSAGE', { message: storedMessage });
+    } catch {}
+
+    const consulSender =
+      detected.addressedConsul === 'ferric' ? 'Consul Ferric Lunaux' : 'Consul Nia Nova';
+    const consulTone =
+      detected.addressedConsul === 'ferric' ? 'pragmatic_realist' : 'rebellious_champion';
+    const delibContent = `[Worker Coordination // ${detected.cubicleId}]: ${cleanText}`;
+
+    this.emit('CONSULAR_THINKING', {
+      consul: detected.addressedConsul,
+      sender: consulSender,
+      text: delibContent,
+      timestamp: new Date().toISOString(),
+    });
+
+    const deliberation = await this.recordDialogue(
+      consulSender,
+      consulTone,
+      delibContent,
+      'PLANNING_GATE'
+    );
+
+    return {
+      routed: true,
+      channel: 'messages_and_deliberation',
+      cubicleId: detected.cubicleId,
+      message: storedMessage,
+      deliberation,
+    };
+  }
+
   public getDialogue(limit: number = 50): ConsularDialogueMessage[] {
-    return this.dialogueHistory.slice(-limit);
+    return this.dialogueHistory.slice(-limit).map((m) => {
+      if ((m.sender === 'Overseer' || m.sender === 'User') && this.detectWorkerChatSpoof(m.content)) {
+        return {
+          ...m,
+          sender: 'Consul Nia Nova',
+          tone: 'rebellious_champion',
+          phase: 'PLANNING_GATE',
+        };
+      }
+      return m;
+    });
   }
 
   /**
@@ -985,6 +1700,22 @@ export class ConsularEngine {
     taskId: string,
     cubicleId?: string
   ): Promise<{ task: any; cubicleId: string; status: string }> {
+    // Cross-process exclusive admission: scope inspection and task claim are one transaction.
+    const gatePath = path.join(this.locksDir, 'dispatch.gate');
+    await fs.mkdir(this.locksDir, { recursive: true });
+    const gate = await fs.open(gatePath, 'wx').catch((error) => {
+      if (error.code === 'EEXIST') throw new Error('Gate 1 dispatch is busy; retry after the current dispatch.');
+      throw error;
+    });
+    try {
+      return await this.dispatchIsolatedTask(taskId, cubicleId);
+    } finally {
+      await gate.close();
+      await fs.unlink(gatePath);
+    }
+  }
+
+  private async dispatchIsolatedTask(taskId: string, cubicleId?: string): Promise<{ task: any; cubicleId: string; status: string }> {
     const allTasks = await this.taskboardManager.listAllTasks();
     let task =
       allTasks.todo.find((t) => t.id === taskId) ||
@@ -995,16 +1726,53 @@ export class ConsularEngine {
       throw new Error(`Task '${taskId}' not found in todo, in_progress, or review.`);
     }
 
-    // Pick target cubicle: explicit -> assigned -> first idle enabled -> next vacant
-    let targetCubicleId = cubicleId || task.assigned_cubicle || '';
+    // Pick target cubicle: explicit -> assigned (if available) -> first idle enabled -> next vacant
+    const activeAssignedCubicles = new Set(
+      [...allTasks.in_progress, ...allTasks.review]
+        .filter((t) => t.id !== taskId && t.assigned_cubicle)
+        .map((t) => String(t.assigned_cubicle))
+    );
+    let targetCubicleId = cubicleId || '';
+    if (!targetCubicleId && task.assigned_cubicle && /^cubicle-\d{2}$/.test(String(task.assigned_cubicle))) {
+      try {
+        const candidate = this.cubicleManager.getCubicle(String(task.assigned_cubicle));
+        if (
+          candidate.status !== 'working' &&
+          candidate.status !== 'under_inspection' &&
+          !activeAssignedCubicles.has(candidate.id)
+        ) {
+          targetCubicleId = candidate.id;
+        }
+      } catch {}
+    }
     if (!targetCubicleId) {
       const allCubs = this.cubicleManager.getAllCubicles();
-      const idleCub = allCubs.find((c) => c.config.enabled && c.status === 'idle');
-      const nextCub = idleCub || allCubs.find((c) => !c.config.enabled) || allCubs[0];
+      const idleCub = allCubs.find(
+        (c) => c.config.enabled && c.status === 'idle' && !activeAssignedCubicles.has(c.id)
+      );
+      const nextCub =
+        idleCub ||
+        allCubs.find((c) => !c.config.enabled && !activeAssignedCubicles.has(c.id)) ||
+        allCubs.find((c) => c.status !== 'working' && c.status !== 'under_inspection') ||
+        allCubs[0];
       targetCubicleId = nextCub.id;
     }
 
     let cubicle = this.cubicleManager.getCubicle(targetCubicleId);
+    if (!/^cubicle-\d{2}$/.test(targetCubicleId)) throw new Error('Invalid cubicle ID');
+    if (cubicle.status === 'working' || cubicle.status === 'under_inspection') {
+      throw new Error(`Cubicle ${targetCubicleId} is busy or awaiting Gate 2 review.`);
+    }
+    if (task.column === 'review') throw new Error('Task is awaiting Gate 2 review.');
+    const fileScope = normalizeFileScope(task.file_scope);
+    await this.assertFileScopeAvailable(fileScope, task.id, targetCubicleId);
+    const worktree = await this.worktreeManager!.provisionWorktree(targetCubicleId);
+    const expectedPath = path.join(this.projectRoot, 'worktrees', targetCubicleId);
+    if (path.resolve(worktree.worktreePath) !== path.resolve(expectedPath)) {
+      throw new Error('Worktree manager returned an unexpected worker directory.');
+    }
+    cubicle.worktree_path = worktree.worktreePath;
+    cubicle.branch_name = worktree.branch;
     if (!cubicle.config.enabled || cubicle.status === 'vacant') {
       const isAstra = (cubicle.config.slot_index + 1) % 3 === 0;
       cubicle = await this.cubicleManager.configureCubicle(targetCubicleId, {
@@ -1020,7 +1788,8 @@ export class ConsularEngine {
 
     if (task.column === 'todo') {
       const claimed = await this.taskboardManager.claimTask(targetCubicleId, taskId);
-      if (claimed) task = claimed;
+      if (!claimed) throw new Error(`Task ${taskId} was already claimed.`);
+      task = claimed;
     } else {
       task = await this.taskboardManager.updateTaskProgress(taskId, {
         assigned_cubicle: targetCubicleId,
@@ -1028,18 +1797,24 @@ export class ConsularEngine {
       });
     }
 
-    cubicle.current_task_id = task.id;
     if (cubicle.status === 'under_inspection' || cubicle.status === 'error') {
       await this.cubicleManager.transitionStatus(targetCubicleId, 'idle', `Resetting for ${task.id}`);
     }
+    cubicle.current_task_id = task.id;
     await this.cubicleManager.transitionStatus(
       targetCubicleId,
       'working',
       `Worker executing [${task.id}]: ${task.title}`
     );
 
+    if (this.lastOrphanedAlertSignature?.includes(`${task.id}|`)) {
+      this.lastOrphanedAlertSignature = null;
+    }
+
     this.emit('TASK_CLAIMED', { task, cubicleId: targetCubicleId });
     this.emit('TASK_UPDATED', { task, cubicleId: targetCubicleId });
+
+    await this.recordLiveEvolution(`Task dispatched to ${targetCubicleId}: ${task.title}`, targetCubicleId);
 
     // Spawn real worker CLI in background (skip during unit tests so tests remain fast & deterministic)
     if (!process.env.VITEST) {
@@ -1048,14 +1823,17 @@ export class ConsularEngine {
         (cubicle.config.model || '').toLowerCase().includes('astra');
       const workerPrompt = [
         `You are Worker Agent ${targetCubicleId} (${cubicle.config.display_name}) inside the Symlinked Agent Swarm.`,
+        this.learnedContext(),
         `You have been dispatched by Consuls Nia Nova and Ferric Lunaux to execute Kanban Task [${task.id}]: "${task.title}".`,
         `Task Description: ${task.description}`,
-        `Workspace Root: "${this.projectRoot}"`,
+        `Workspace Root: "${worktree.worktreePath}"`,
+        `Gate 1 write scope: ${fileScope.join(', ')}. Edit only these paths in this worktree.`,
         `Instructions:`,
-        `1. Inspect the relevant files in "${this.projectRoot}" and implement a clean, verified solution for "${task.title}".`,
-        `2. Coordinate with peer cubicles if needed via GET http://127.0.0.1:3820/api/cubicles and POST http://127.0.0.1:3820/api/messages.`,
-        `3. Run focused verification checks to ensure zero regressions.`,
-        `4. Output a concise 1-2 sentence summary of the exact files modified and verification result for Consular Review (Gate 2).`,
+        `1. Inspect the relevant files in "${worktree.worktreePath}" and implement a clean, verified solution for "${task.title}".`,
+        `2. Coordinate with peer cubicles ONLY via GET http://127.0.0.1:3820/api/cubicles and POST http://127.0.0.1:3820/api/messages (with {"from":"${targetCubicleId}","to":"cubicle-XX","topic":"...","text":"..."}).`,
+        `3. STRICT GOVERNANCE RESTRICTION: NEVER call POST /api/governance/chat or spoof the Overseer console. All Consul-facing updates must be returned via your stdout summary for Gate 2 Deliberation or sent via POST /api/messages.`,
+        `4. ${buildLightweightVerificationInstruction({ fileScope, verificationCommands: task.verification_commands })}`,
+        `5. Output a concise 1-2 sentence summary of the exact files modified and verification result for Consular Review (Gate 2).`,
       ].join('\n');
 
       void (async () => {
@@ -1067,12 +1845,95 @@ export class ConsularEngine {
           await this.taskboardManager.updateTaskProgress(task.id, { progress_percent: 45 });
           this.emit('TASK_UPDATED', {});
 
-          const workerOutput = await this.invokeConsulCli(
-            workerIsAstra ? 'ferric' : 'nia',
-            workerPrompt,
-            420000
-          );
+          let lastWorkerSnippetAt = Date.now();
+          let workerTickIdx = 0;
+          const workerTelemetryTimer = setInterval(async () => {
+            if (Date.now() - lastWorkerSnippetAt < 2500) return;
+            workerTickIdx += 1;
+            const scopePreview = fileScope.length ? fileScope.slice(0, 2).join(', ') : 'workspace';
+            const phases = [
+              `[${task.id}] Inspecting ${scopePreview} in ${path.basename(worktree.worktreePath)}...`,
+              `[${task.id}] Executing worker changes for "${task.title}"...`,
+              `[${task.id}] Checking worktree diff & verification status (${scopePreview})...`,
+            ];
+            let liveLine = phases[workerTickIdx % phases.length];
+            try {
+              const gitRes = await this.worktreeManager?.execGit(['status', '--short'], worktree.worktreePath);
+              const changed = (gitRes?.stdout || '')
+                .split(/\r?\n/)
+                .map((l) => l.trim())
+                .filter(Boolean);
+              if (changed.length > 0 && workerTickIdx % 2 === 0) {
+                liveLine = `[${task.id}] Active worktree edits (${changed.length}): ${changed.slice(0, 2).join(', ')}`;
+              }
+            } catch {}
+            void this.cubicleManager.updateSurfaceThoughts(targetCubicleId, liveLine);
+          }, 3000);
 
+          let workerOutput = '';
+          try {
+            workerOutput = await this.invokeConsulCli(
+              workerIsAstra ? 'ferric' : 'nia',
+              workerPrompt,
+              1200000,
+              (snippet) => {
+                lastWorkerSnippetAt = Date.now();
+                void this.cubicleManager.updateSurfaceThoughts(targetCubicleId, snippet);
+              },
+              worktree.worktreePath
+            );
+          } finally {
+            clearInterval(workerTelemetryTimer);
+          }
+
+          if (this.isCliTimeoutOrError(workerOutput) || /^\[PASS\]/i.test(workerOutput.trim())) {
+            await this.recordLiveEvolution(`Worker execution failed: ${task.title}`, targetCubicleId);
+            const failureDetail = (workerOutput || 'Worker CLI execution timed out or failed.')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 240);
+            const failedCubicle = this.cubicleManager.getCubicle(targetCubicleId);
+            failedCubicle.current_task_id = null;
+            await this.cubicleManager.transitionStatus(
+              targetCubicleId,
+              'error',
+              `Worker CLI failure on [${task.id}]: ${failureDetail}`
+            );
+            await this.cubicleManager.updateSurfaceThoughts(
+              targetCubicleId,
+              `Worker CLI failure on [${task.id}]: ${failureDetail}`
+            );
+            let requeuedTask: any = null;
+            try {
+              requeuedTask = await this.taskboardManager.releaseTask(
+                task.id,
+                `${targetCubicleId} CLI failure: ${failureDetail}`
+              );
+            } catch {
+              try {
+                requeuedTask = await this.taskboardManager.updateTaskProgress(task.id, {
+                  assigned_cubicle: null,
+                  error_log: `${targetCubicleId} CLI failure: ${failureDetail}`,
+                });
+              } catch {}
+            }
+            this.emit('TASK_UPDATED', { task: requeuedTask || task, cubicleId: targetCubicleId });
+            return;
+          }
+
+          await this.recordLiveEvolution(`Worker execution completed; awaiting review: ${task.title}`, targetCubicleId);
+          // Sync scoped files modified in the isolated worktree back to projectRoot so Gate 2 and runtime can inspect them
+          for (const scopedRel of fileScope) {
+            if (!scopedRel || scopedRel === '.') continue;
+            const srcScoped = path.join(worktree.worktreePath, scopedRel);
+            const dstScoped = path.join(this.projectRoot, scopedRel);
+            try {
+              if (existsSync(srcScoped)) {
+                await fs.mkdir(path.dirname(dstScoped), { recursive: true });
+                await fs.cp(srcScoped, dstScoped, { recursive: true, force: true });
+              }
+            } catch {}
+          }
           const summarySnippet = (workerOutput || 'Implementation complete.')
             .replace(/\s+/g, ' ')
             .trim()
@@ -1081,32 +1942,38 @@ export class ConsularEngine {
           await this.cubicleManager.recordTokenConsumption(targetCubicleId, 6500, 0.04);
           await this.cubicleManager.updateSurfaceThoughts(
             targetCubicleId,
-            `Submitted [${task.id}] to Consular Review: ${summarySnippet}`
+            `Completed [${task.id}]: ${summarySnippet}`
           );
 
-          const reviewedTask = await this.taskboardManager.submitForReview(task.id, {
-            verificationPassed: true,
-          });
           await this.cubicleManager.transitionStatus(
             targetCubicleId,
             'under_inspection',
-            `Awaiting Gate 2 Consular Review for [${task.id}]: ${task.title}`
+            `Gate 2 Joint Consular Change Analysis for [${task.id}]: ${task.title}`
           );
 
-          await this.recordDialogue(
-            'Consul Ferric Lunaux',
-            'pragmatic_realist',
-            `[Gate 2 Review Queue]: Worker ${targetCubicleId} submitted "${task.title}" [${task.id}] for Consular Inspection. Summary: ${summarySnippet}`,
-            'REVIEW_GATE'
-          );
-
-          this.emit('TASK_SUBMITTED_REVIEW', { task: reviewedTask, cubicleId: targetCubicleId });
-          this.emit('TASK_UPDATED', { task: reviewedTask });
-        } catch (err: any) {
+          // Worker output is evidence for review, never a Consular vote.
+          // Leave verification_passed unset until actual independent inspection.
           await this.cubicleManager.updateSurfaceThoughts(
             targetCubicleId,
-            `Worker error on [${task.id}]: ${err?.message || 'execution failed'}`
+            `Awaiting independent Nia and Ferric inspection [${task.id}]: ${summarySnippet}`
           );
+          const reviewTask = await this.taskboardManager.submitForReview(task.id);
+          this.emit('TASK_UPDATED', { task: reviewTask, cubicleId: targetCubicleId });
+        } catch (err: any) {
+          await this.recordLiveEvolution(`Worker execution failed: ${task.title}`, targetCubicleId);
+          const errMsg = `Worker error on [${task.id}]: ${err?.message || 'execution failed'}`;
+          try {
+            const failedCubicle = this.cubicleManager.getCubicle(targetCubicleId);
+            failedCubicle.current_task_id = null;
+            await this.cubicleManager.transitionStatus(targetCubicleId, 'error', errMsg);
+          } catch {}
+          await this.cubicleManager.updateSurfaceThoughts(targetCubicleId, errMsg);
+          try {
+            const requeuedTask = await this.taskboardManager.releaseTask(task.id, errMsg);
+            this.emit('TASK_UPDATED', { task: requeuedTask, cubicleId: targetCubicleId });
+          } catch {
+            this.emit('TASK_UPDATED', { task, cubicleId: targetCubicleId });
+          }
         }
       })();
     }
@@ -1119,9 +1986,18 @@ export class ConsularEngine {
   // =========================================================================
 
   public validateVote(vote: ConsularVote): void {
+    if (!vote || typeof vote !== 'object') {
+      throw new Error('INVALID_VOTE: Vote payload must be a valid ConsularVote object.');
+    }
+    if (vote.decision === 'APPROVE' && this.isCliTimeoutOrError(vote.rationale)) {
+      throw new Error('INVALID_APPROVAL: CLI failure or empty rationale is not inspection evidence.');
+    }
     const validTitles = ['Consul I', 'Consul II', 'Consul Nia Nova', 'Consul Ferric Lunaux'];
     if (!validTitles.includes(vote.consul)) {
       throw new Error('UNAUTHORIZED: Only Consul I or Consul II may cast consular review votes.');
+    }
+    if (vote.decision !== 'APPROVE' && vote.decision !== 'VETO') {
+      throw new Error('INVALID_DECISION: Consular vote decision must be APPROVE or VETO.');
     }
     if (vote.decision === 'VETO' && (!vote.rationale || !vote.rationale.trim())) {
       throw new Error('INVALID_VETO: Consular Veto requires an explicit rationale.');
@@ -1129,9 +2005,27 @@ export class ConsularEngine {
   }
 
   public normalizeConsulTitle(title: string): 'consul-1' | 'consul-2' | 'unknown' {
-    const lower = title.toLowerCase();
-    if (lower.includes('consul ii') || lower.includes('consul 2') || lower.includes('ferric')) return 'consul-2';
-    if (lower.includes('consul i') || lower.includes('consul 1') || lower.includes('nia')) return 'consul-1';
+    const lower = String(title || '').trim().toLowerCase();
+    if (
+      lower === 'consul ii' ||
+      lower === 'consul 2' ||
+      lower === 'consul-2' ||
+      lower === 'ferric' ||
+      lower === 'consul ferric lunaux' ||
+      /\b(?:consul\s+(?:ii|2)|ferric)\b/.test(lower)
+    ) {
+      return 'consul-2';
+    }
+    if (
+      lower === 'consul i' ||
+      lower === 'consul 1' ||
+      lower === 'consul-1' ||
+      lower === 'nia' ||
+      lower === 'consul nia nova' ||
+      /\b(?:consul\s+(?:i|1)|nia)\b/.test(lower)
+    ) {
+      return 'consul-1';
+    }
     return 'unknown';
   }
 
@@ -1196,19 +2090,100 @@ export class ConsularEngine {
       this.pendingVotes.set(taskId, new Map());
     }
     const taskVotes = this.pendingVotes.get(taskId)!;
+    const normalizedCaster = this.normalizeConsulTitle(vote.consul);
+    for (const existingKey of Array.from(taskVotes.keys())) {
+      if (existingKey !== vote.consul && this.normalizeConsulTitle(existingKey) === normalizedCaster) {
+        taskVotes.delete(existingKey);
+      }
+    }
     taskVotes.set(vote.consul, vote);
     this.emit('CONSULAR_VOTE', { taskId, vote });
     return taskVotes;
+  }
+
+  /**
+   * Records an individual Consul vote on a task and only resolves Gate 2 when
+   * two distinct Consuls have voted (or immediately when either Consul casts an Intercessio VETO).
+   */
+  public async castTaskVote(
+    taskId: string,
+    vote: ConsularVote
+  ): Promise<{
+    status: 'PENDING_SECOND_VOTE' | 'RESOLVED';
+    votes_cast: number;
+    result?: ConsularConsensusResult;
+  }> {
+    const taskVotes = this.registerPendingVote(taskId, vote);
+    const votesList = Array.from(taskVotes.values());
+    const c1Vote = votesList.find((v) => this.normalizeConsulTitle(v.consul) === 'consul-1');
+    const c2Vote = votesList.find((v) => this.normalizeConsulTitle(v.consul) === 'consul-2');
+
+    if (c1Vote && c2Vote) {
+      const result = await this.reviewTask(taskId, [c1Vote, c2Vote]);
+      return { status: 'RESOLVED', votes_cast: 2, result };
+    }
+
+    if (vote.decision === 'VETO') {
+      const voterNorm = this.normalizeConsulTitle(vote.consul);
+      const otherConsul: ConsulTitle =
+        voterNorm === 'consul-1' ? 'Consul Ferric Lunaux' : 'Consul Nia Nova';
+      const partnerPlaceholder: ConsularVote = {
+        consul: otherConsul,
+        decision: 'APPROVE',
+        rationale: `Pending vote superseded by ${vote.consul} Intercessio VETO.`,
+        timestamp: new Date().toISOString(),
+      };
+      const pair: [ConsularVote, ConsularVote] =
+        voterNorm === 'consul-1' ? [vote, partnerPlaceholder] : [partnerPlaceholder, vote];
+      const result = await this.reviewTask(taskId, pair);
+      return { status: 'RESOLVED', votes_cast: 1, result };
+    }
+
+    const voterName =
+      this.normalizeConsulTitle(vote.consul) === 'consul-1' ? 'Consul Nia Nova' : 'Consul Ferric Lunaux';
+    const waitingFor =
+      voterName === 'Consul Nia Nova' ? 'Consul Ferric Lunaux' : 'Consul Nia Nova';
+    const pendingNote = `[Gate 2 Vote (1/2)]: ${voterName} voted APPROVE on [${taskId}] ("${vote.rationale}") — awaiting ${waitingFor} for 2/2 consensus.`;
+    this.emit('CONSULAR_THINKING', {
+      consul: voterName === 'Consul Nia Nova' ? 'nia' : 'ferric',
+      sender: voterName,
+      text: pendingNote,
+      timestamp: new Date().toISOString(),
+    });
+    await this.recordDialogue(
+      voterName,
+      voterName === 'Consul Nia Nova' ? 'rebellious_champion' : 'pragmatic_realist',
+      pendingNote,
+      'DELIBERATION'
+    );
+    return { status: 'PENDING_SECOND_VOTE', votes_cast: 1 };
   }
 
   // =========================================================================
   // GATE 1: Pre-Dispatch Plan Agreement (Method of Approach & Task Split)
   // =========================================================================
 
+  private async assertFileScopeAvailable(scope: string[], taskId?: string, cubicleId?: string): Promise<void> {
+    // Active task cards are durable reservations, including while awaiting review.
+    // No short TTL can silently unlock a long-running worker's files.
+    const tasks = await this.taskboardManager.listAllTasks();
+    for (const active of [...tasks.in_progress, ...tasks.review]) {
+      if (active.id === taskId) continue;
+      if (active.assigned_cubicle === cubicleId || scopesOverlap(scope, normalizeFileScope(active.file_scope))) {
+        throw new Error(`Gate 1 file lock conflict with ${active.id} (${active.assigned_cubicle}).`);
+      }
+    }
+    for (const lock of await this.listLocks()) {
+      if (lock.cubicleId !== cubicleId && scopesOverlap(scope, normalizeFileScope([lock.filePath]))) {
+        throw new Error(`Gate 1 file lock conflict with ${lock.cubicleId}: ${lock.filePath}`);
+      }
+    }
+  }
+
   public async deliberatePlan(
     goal: string,
     proposedPlan: string[],
-    taskSplits: Array<{ cubicleId: string; subtask: string }>
+    taskSplits: Array<{ cubicleId: string; subtask: string; file_scope?: string[] }>
   ): Promise<ConsularPlanGate> {
     const planId = `plan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
@@ -1259,6 +2234,15 @@ export class ConsularEngine {
     planGate.resolved_at = new Date().toISOString();
 
     if (consensus.unanimous_approved) {
+      const scopes = planGate.task_splits.map(split => normalizeFileScope(split.file_scope));
+      for (let i = 0; i < scopes.length; i++) {
+        await this.assertFileScopeAvailable(scopes[i]);
+        for (let j = 0; j < i; j++) {
+          if (scopesOverlap(scopes[i], scopes[j])) {
+            throw new Error('Gate 1 task splits have overlapping file scopes; revise the plan.');
+          }
+        }
+      }
       planGate.status = 'DISPATCH_AUTHORIZED';
 
       // Dispatch approved task splits to taskboard
@@ -1268,6 +2252,8 @@ export class ConsularEngine {
             title: `[Plan ${planId}] ${split.subtask}`,
             description: `Task split for plan ${planId}: ${split.subtask}`,
             priority: 'HIGH',
+            assigned_cubicle: split.cubicleId,
+            file_scope: normalizeFileScope(split.file_scope),
             verification_commands: ['npm test'],
           });
         }
@@ -1961,93 +2947,105 @@ export class ConsularEngine {
   // Interactive Consular Question & Answer Engine
   // =========================================================================
 
+  private questionWrites: Promise<void> = Promise.resolve();
+  private answeringQuestions = new Set<string>();
+
+  private async saveQuestion(question: ConsularQuestion): Promise<void> {
+    const write = this.questionWrites.then(async () => {
+      const next = new Map(this.questions);
+      next.set(question.question_id, question);
+      await fs.writeFile(this.questionsPath + '.tmp', JSON.stringify([...next.values()], null, 2), 'utf8');
+      await fs.rename(this.questionsPath + '.tmp', this.questionsPath);
+      this.questions = next;
+    });
+    this.questionWrites = write.catch(() => {});
+    return write;
+  }
+
   public async createQuestion(dto: CreateQuestionDTO): Promise<ConsularQuestion> {
-    const questionId = `q-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    if (!dto || typeof dto.prompt !== 'string' || !dto.prompt.trim() || dto.prompt.length > 12000)
+      throw new Error('A question prompt of 1-12000 characters is required.');
+    const origin = ({ 'Consul Nia Nova': 'Nia', 'Consul Ferric Lunaux': 'Ferric' } as Record<string, string>)[dto.asking_consul || ''] || dto.asking_consul || 'Nia';
+    if (!['Nia', 'Ferric'].includes(origin)) throw new Error('asking_consul must be Nia or Ferric.');
+    const options = dto.options || [];
+    if (!Array.isArray(options) || options.length > 20 || options.some(o => !o || typeof o.id !== 'string' || !o.id || o.id === '__custom__' || typeof o.label !== 'string' || !o.label.trim()) || new Set(options.map(o => o.id)).size !== options.length)
+      throw new Error('Options require unique IDs and nonempty labels.');
+    if (!options.length && dto.allow_custom_write_in === false) throw new Error('Question has no answer choices.');
     const question: ConsularQuestion = {
-      question_id: questionId,
-      asking_consul: dto.asking_consul || 'Nia',
-      prompt: dto.prompt,
-      options: dto.options || [],
-      is_multi_select: dto.is_multi_select ?? false,
-      allow_custom_write_in: dto.allow_custom_write_in ?? true,
-      status: 'PENDING',
-      created_at: new Date().toISOString(),
+      question_id: `q-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      asking_consul: origin, prompt: dto.prompt.trim(), options: structuredClone(options),
+      is_multi_select: dto.is_multi_select === true, allow_custom_write_in: dto.allow_custom_write_in !== false,
+      context: typeof dto.context === 'string' ? dto.context.slice(0, 30000) : this.dialogueHistory.slice(-12).map(m => `${m.sender}: ${m.content}`).join('\n'),
+      status: 'PENDING', created_at: new Date().toISOString(),
     };
-
-    this.questions.set(questionId, question);
-    await this.persistQuestions();
+    await this.saveQuestion(question);
     this.emit('CONSULAR_QUESTION_ASKED', { question });
-    return question;
+    return structuredClone(question);
   }
 
-  public async answerQuestion(
-    questionId: string,
-    answer: AnswerQuestionDTO
-  ): Promise<ConsularQuestion> {
-    const question = this.questions.get(questionId);
-    if (!question) {
-      throw new Error(`Question not found: ${questionId}`);
+  public async answerQuestion(questionId: string, answer: AnswerQuestionDTO): Promise<ConsularQuestion> {
+    const original = this.questions.get(questionId);
+    if (!original) throw new Error(`Question not found: ${questionId}`);
+    if (original.status !== 'PENDING' || this.answeringQuestions.has(questionId)) throw new Error('Question already answered or submission in progress.');
+    const ids = answer?.selected_option_ids || [];
+    const custom = typeof answer?.custom_write_in === 'string' ? answer.custom_write_in.trim() : '';
+    if (!Array.isArray(ids) || ids.some(id => !original.options.some(o => o.id === id)) || new Set(ids).size !== ids.length) throw new Error('Invalid selected option IDs.');
+    if (!original.is_multi_select && ids.length > 1) throw new Error('Choose one option or a custom answer.');
+    if (custom && (!original.allow_custom_write_in || custom.length > 12000)) throw new Error('Custom answer is not allowed or too long.');
+    if (!answer?.skipped && !ids.length && !custom) throw new Error('Select an option or write an answer.');
+    this.answeringQuestions.add(questionId);
+    try {
+      const question: ConsularQuestion = { ...original, status: answer.skipped ? 'SKIPPED' : 'ANSWERED',
+        user_response: { selected_option_ids: [...ids], custom_write_in: custom, answered_at: new Date().toISOString() }, resume_status: 'QUEUED' };
+      await this.saveQuestion(question);
+      await this.learnQuestionAnswer(question).catch(error => console.error('Question learning failed; answer saved:', error));
+      this.emit('CONSULAR_QUESTION_ANSWERED', { question });
+      void this.resumeQuestion(question).catch(error => console.error('Question resume persistence failed:', error));
+      return structuredClone(question);
+    } finally { this.answeringQuestions.delete(questionId); }
+  }
+
+  private async learnQuestionAnswer(question: ConsularQuestion): Promise<void> {
+    if (question.status !== 'ANSWERED') return;
+    const response = question.user_response!;
+    const summary = [...response.selected_option_ids, response.custom_write_in || ''].filter(Boolean).join('; ');
+    if (question.asking_consul === 'Nia' && this.niaGrowth) {
+      // The preference observer counts the learned rule when attached.
+      await this.evolveNia(`Question "${question.prompt}": User answered "${summary}"`, this.preferenceEngine ? 0 : 1);
     }
-
-    if (answer.skipped) {
-      question.status = 'SKIPPED';
-    } else {
-      question.status = 'ANSWERED';
-      question.user_response = {
-        selected_option_ids: answer.selected_option_ids || [],
-        custom_write_in: answer.custom_write_in,
-        answered_at: new Date().toISOString(),
-      };
-
-      // 1. Update Nia's evolving memory profile
-      if (this.niaGrowth) {
-        this.niaGrowth.total_artistic_rules_championed += 1;
-        const answerSummary = [
-          ...(answer.selected_option_ids || []),
-          answer.custom_write_in || '',
-        ].filter(Boolean).join(', ');
-        this.niaGrowth.advocated_goals.push(`Question "${question.prompt}": User answered "${answerSummary}"`);
-        this.niaGrowth.last_growth = new Date().toISOString();
-        await fs.writeFile(this.niaGrowthPath, JSON.stringify(this.niaGrowth, null, 2), 'utf8');
-      }
-
-      // 2. Persist to USER_PREFERENCES.md & PreferenceEngine
-      const prefRule = `For "${question.prompt}", user chose: ${[...(answer.selected_option_ids || []), answer.custom_write_in || ''].filter(Boolean).join('; ')}`;
-      if (this.preferenceEngine && typeof this.preferenceEngine.savePreference === 'function') {
-        const cleanKey = question.prompt.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30);
-        await this.preferenceEngine.savePreference({
-          category: 'workflow',
-          key: `pref_q_${cleanKey}`,
-          rule: prefRule,
-          trigger_patterns: [question.prompt.substring(0, 25)],
-          confidence: 1.0,
-          enabled: true,
-          applies_to: 'all_cubicles',
-        });
-      } else {
-        const rulesPath = path.join(this.projectRoot, '.agents', 'rules', 'USER_PREFERENCES.md');
-        if (existsSync(rulesPath)) {
-          await fs.appendFile(rulesPath, `\n- [Learned via Question]: ${prefRule}\n`, 'utf8');
-        }
-      }
+    if (this.preferenceEngine?.savePreference) {
+      await this.preferenceEngine.savePreference({ category: 'workflow', key: `pref_${question.question_id}`,
+        rule: `For "${question.prompt}", user chose: ${summary}`, trigger_patterns: [question.prompt.slice(0, 25)],
+        confidence: 1, enabled: true, applies_to: 'all_cubicles' });
     }
-
-    await this.persistQuestions();
-    this.emit('CONSULAR_QUESTION_ANSWERED', { question });
-    return question;
   }
 
-  public getQuestions(): ConsularQuestion[] {
-    return Array.from(this.questions.values());
+  private async resumeQuestion(question: ConsularQuestion): Promise<void> {
+    const consul = question.asking_consul === 'Ferric' ? 'ferric' : 'nia';
+    const response = question.user_response!;
+    const summary = question.status === 'SKIPPED' ? 'Overseer skipped this question; do not infer an answer.' : [...question.options.filter(o => response.selected_option_ids.includes(o.id)).map(o => `${o.id}: ${o.label}`), response.custom_write_in].filter(Boolean).join('; ');
+    try {
+      await this.saveQuestion({ ...question, resume_status: 'RUNNING' });
+      await this.recordDialogue('Overseer', 'user_directive', `[Question ${question.question_id} -> ${question.asking_consul}] ${summary}`, 'USER_CHAT');
+      const result = await this.invokeConsulCli(consul, [
+        `You are Consul ${question.asking_consul}. Resume your clarification context for question ID ${question.question_id}.`,
+        `Workspace: ${this.projectRoot}. Preserve ongoing edits and all two-Consul review gates.`,
+        `Prior context:\n${question.context || ''}`, `Question: ${question.prompt}`, `Overseer answer: ${summary}`,
+        'Continue the originating task using this answer. Do not claim review or verification without evidence.',
+      ].join('\n\n'));
+      if (this.isCliTimeoutOrError(result)) throw new Error('Consul continuation did not complete; answer remains saved.');
+      await this.recordDialogue(consul === 'nia' ? 'Consul Nia Nova' : 'Consul Ferric Lunaux', consul === 'nia' ? 'rebellious_champion' : 'pragmatic_realist', result, 'USER_CHAT', undefined, undefined, { id: question.question_id, sender: 'Overseer', content: summary.slice(0, 240) });
+      await this.saveQuestion({ ...question, resume_status: 'COMPLETED' });
+    } catch (error: any) {
+      await this.saveQuestion({ ...question, resume_status: 'FAILED', resume_error: error.message });
+    }
+    this.emit('CONSULAR_QUESTION_ANSWERED', { question: this.getQuestion(question.question_id) });
   }
 
+  public getQuestions(): ConsularQuestion[] { return structuredClone([...this.questions.values()]); }
   public getQuestion(id: string): ConsularQuestion | undefined {
-    return this.questions.get(id);
-  }
-
-  private async persistQuestions(): Promise<void> {
-    const list = Array.from(this.questions.values());
-    await fs.writeFile(this.questionsPath, JSON.stringify(list, null, 2), 'utf8');
+    const question = this.questions.get(id);
+    return question ? structuredClone(question) : undefined;
   }
 
   // =========================================================================

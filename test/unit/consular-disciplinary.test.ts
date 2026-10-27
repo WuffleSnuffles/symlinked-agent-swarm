@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { createTestSandbox } from '../e2e/helpers';
@@ -560,6 +560,7 @@ describe('Consular Governance & 5 Disciplinary Powers Unit Tests', () => {
 
   describe('9. Interactive Consular Question & Answer Engine', () => {
     it('creates a question, answers it, and updates Nia growth memory profile', async () => {
+      vi.spyOn(consularEngine as any, 'resumeQuestion').mockResolvedValue(undefined);
       let askedEvent = false;
       let answeredEvent = false;
       consularEngine.onEvent((type) => {

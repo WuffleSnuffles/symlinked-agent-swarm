@@ -1,0 +1,497 @@
+/**
+ * src/public/css/consular-avatars.css
+ *
+ * Corner Consular Avatars, 12-Scenario State Machine & Wrestling Clash Engine.
+ * Features:
+ * - Lux-inspired Consul Nia Nova & Lucian-inspired Consul Ferric Lunaux (crossed arms, grumpy).
+ * - 2x2 texture sprite offsets and fallback vector layers.
+ * - Wrestling clash deadlock stage with sparks and gritted teeth.
+ * - 12-scenario keyframes, dialogue bubble, and manual test drawer.
+ */
+
+/* Centered Consular Avatar Widget in Twin Sauron Masthead */
+#consular-prompt-avatar-widget {
+  width: 268px;
+  height: 152px;
+  margin: 0 auto;
+  background: #090a0d;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: visible;
+  flex-shrink: 0;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+#consular-prompt-avatar-widget.drawer-open {
+  height: 152px;
+  overflow: visible;
+  border-color: var(--color-cyan);
+}
+
+/* CRT Scanlines Overlay */
+.avatar-crt-scanlines {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    rgba(0, 0, 0, 0.15) 0px,
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  z-index: 15;
+}
+
+/* Header Strip */
+.avatar-hud-strip {
+  height: 24px;
+  background: #11141c;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  z-index: 12;
+}
+
+.hud-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-indicator {
+  width: 6px;
+  height: 6px;
+  background: var(--color-cyan);
+  box-shadow: 0 0 6px var(--color-cyan);
+  display: inline-block;
+}
+
+.hud-state-text {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--color-text-dim);
+}
+
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-consuls-tag {
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  color: var(--color-amber);
+}
+
+.brutalist-mini-btn {
+  background: #1a1e2b;
+  color: var(--color-text-dim);
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  padding: 1px 4px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.brutalist-mini-btn:hover {
+  background: var(--color-amber);
+  color: #000;
+}
+
+/* Main Avatar Stage Viewport */
+.avatar-stage-viewport {
+  position: relative;
+  flex: 1;
+  background: #08090c;
+  overflow: hidden;
+  display: flex;
+}
+
+/* Split Consular Stages */
+.stage-dual-consuls {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.consul-substage {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: #0d0f14;
+}
+
+/* Texture Sheet Layers (2x2 Grid Offsets) */
+.avatar-texture-layer {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background-size: 200% 200%;
+  background-repeat: no-repeat;
+  transition: background-position 0.25s ease;
+  z-index: 1;
+}
+
+.nia-texture-sheet {
+  background-image: url('/assets/avatars/consul_nia_nova_sheet.jpg');
+  background-position: 0% 0%; /* Default: Idle */
+}
+
+.ferric-texture-sheet {
+  background-image: url('/assets/avatars/consul_ferric_lunaux_sheet.jpg');
+  background-position: 0% 0%; /* Default: Idle crossed arms */
+}
+
+/* Vector SVG Overlays for Micro-Animations */
+.avatar-vector-overlay {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.avatar-nametag {
+  position: absolute;
+  bottom: 2px;
+  left: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--color-text-dim);
+  background: rgba(0, 0, 0, 0.7);
+  padding: 1px 4px;
+  z-index: 3;
+}
+.ferric-substage .avatar-nametag {
+  left: auto;
+  right: 4px;
+}
+
+/* Per-Consul Solo / Independent Activity Status Pill */
+.avatar-solo-activity-pill {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 5px;
+  background: rgba(7, 9, 13, 0.86);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1.15;
+  color: #e2e8f0;
+  z-index: 5;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.65);
+  transition: opacity 0.25s ease, border-color 0.25s ease;
+}
+
+.ferric-activity-pill {
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+.solo-activity-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-cyan);
+  box-shadow: 0 0 5px var(--color-cyan);
+  animation: consulThinkingPulse 1.6s infinite ease-in-out;
+}
+
+.ferric-activity-pill .solo-activity-dot {
+  background: var(--color-amber);
+  box-shadow: 0 0 5px var(--color-amber);
+}
+
+.solo-activity-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+}
+
+/* Center Divider */
+.consul-divider {
+  width: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #06070a;
+  border-left: 1px solid #1c2130;
+  border-right: 1px solid #1c2130;
+  z-index: 4;
+}
+.divider-line {
+  flex: 1;
+  width: 1px;
+  background: #272d3d;
+}
+.clash-symbol {
+  font-size: 9px;
+  color: var(--color-amber);
+  margin: 2px 0;
+}
+
+/* Unified Wrestling Clash Stage (Scenario 03: wrestling_fistfight) */
+.stage-wrestling-clash {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  z-index: 8;
+  overflow: hidden;
+  background: #000000;
+  animation: clash-shake 0.12s infinite linear;
+}
+.stage-wrestling-clash.hidden {
+  display: none !important;
+}
+
+.wrestling-texture-sheet {
+  background-image: url('/assets/avatars/consuls_wrestling_clash.jpg');
+  background-size: 100% auto;
+  background-position: center 22%;
+  background-repeat: no-repeat;
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+}
+
+.wrestling-energy-grid {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 100, 20, 0.35) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+@keyframes clash-shake {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-1px, 1px); }
+  50% { transform: translate(1px, -1px); }
+  75% { transform: translate(-1px, -1px); }
+  100% { transform: translate(1px, 1px); }
+}
+
+/* Canvas Particle FX Overlay */
+.avatar-fx-canvas {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Dialogue Speech Ticker Bubble */
+.avatar-speech-ticker {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(10, 11, 14, 0.92);
+  border-top: 1px solid var(--color-cyan);
+  padding: 3px 6px;
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 11;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.avatar-speech-ticker.hidden {
+  display: none !important;
+}
+.speech-badge {
+  font-weight: 700;
+  color: var(--color-cyan);
+}
+.speech-text {
+  color: var(--color-text-normal);
+}
+
+/* Manual 12-Scenario Selector Drawer */
+.consular-scenario-drawer {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #0c0e14;
+  border: 1px solid var(--border-color);
+  border-top: 1px solid var(--color-cyan);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 100;
+}
+.consular-scenario-drawer.collapsed {
+  display: none !important;
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--color-text-dim);
+  margin-bottom: 2px;
+}
+
+.brutalist-btn-tag {
+  background: #1a1e2a;
+  color: var(--color-phosphor);
+  border: 1px solid var(--color-phosphor);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  padding: 1px 4px;
+  cursor: pointer;
+}
+
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+}
+
+.scenario-btn {
+  background: #141722;
+  color: var(--color-text-normal);
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  padding: 3px 2px;
+  cursor: pointer;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.scenario-btn:hover {
+  background: var(--border-active);
+  border-color: var(--color-text-dim);
+}
+.scenario-btn.active {
+  background: var(--color-cyan);
+  color: #000;
+  border-color: var(--color-cyan);
+  font-weight: 700;
+}
+.scenario-btn.highlight-red:hover {
+  border-color: var(--color-crimson);
+  color: var(--color-crimson);
+}
+.scenario-btn.highlight-amber:hover {
+  border-color: var(--color-amber);
+  color: var(--color-amber);
+}
+.scenario-btn.highlight-cyan:hover {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+}
+.scenario-btn .idx {
+  font-size: 7px;
+  color: var(--color-text-dim);
+}
+
+/* 12-Scenario State Sprite Offset Rules */
+/* 01: idle_observing */
+body[data-avatar-state="idle_observing"] .nia-texture-sheet { background-position: 0% 0%; }
+body[data-avatar-state="idle_observing"] .ferric-texture-sheet { background-position: 0% 0%; }
+
+/* 01b: independent_working (Consuls working independently on cubicles, own tasks, and Gate 2 verification) */
+body[data-avatar-state="independent_working"] .nia-texture-sheet { background-position: 0% 0%; }
+body[data-avatar-state="independent_working"] .ferric-texture-sheet { background-position: 0% 0%; }
+body[data-avatar-state="independent_working"] #consular-prompt-avatar-widget {
+  border-color: rgba(6, 182, 212, 0.45);
+}
+body[data-avatar-state="independent_working"] #avatar-state-label {
+  color: var(--color-cyan);
+}
+
+/* 02: debating */
+body[data-avatar-state="debating"] .nia-texture-sheet { background-position: 100% 0%; }
+body[data-avatar-state="debating"] .ferric-texture-sheet { background-position: 100% 0%; }
+
+/* 04: nia_impatient */
+body[data-avatar-state="nia_impatient"] .nia-texture-sheet { background-position: 0% 100%; }
+body[data-avatar-state="nia_impatient"] .ferric-texture-sheet { background-position: 0% 0%; }
+
+/* 05: disciplinary_execution */
+body[data-avatar-state="disciplinary_execution"] .nia-texture-sheet { background-position: 100% 0%; }
+body[data-avatar-state="disciplinary_execution"] .ferric-texture-sheet { background-position: 0% 100%; }
+
+/* 06: consensus_celebration */
+body[data-avatar-state="consensus_celebration"] .nia-texture-sheet { background-position: 100% 100%; }
+body[data-avatar-state="consensus_celebration"] .ferric-texture-sheet { background-position: 0% 0%; }
+
+/* 07: veto_clash */
+body[data-avatar-state="veto_clash"] .nia-texture-sheet { background-position: 100% 0%; }
+body[data-avatar-state="veto_clash"] .ferric-texture-sheet { background-position: 0% 100%; }
+
+/* 08: error_alarm */
+body[data-avatar-state="error_alarm"] .nia-texture-sheet { background-position: 0% 100%; }
+body[data-avatar-state="error_alarm"] .ferric-texture-sheet { background-position: 100% 0%; }
+
+/* 09: gladiator_spectators */
+body[data-avatar-state="gladiator_spectators"] .nia-texture-sheet { background-position: 100% 100%; }
+body[data-avatar-state="gladiator_spectators"] .ferric-texture-sheet { background-position: 100% 0%; }
+
+/* 10: courier_arrival */
+body[data-avatar-state="courier_arrival"] .nia-texture-sheet { background-position: 100% 100%; }
+body[data-avatar-state="courier_arrival"] .ferric-texture-sheet { background-position: 100% 0%; }
+
+/* 11: self_evolution_upgrade */
+body[data-avatar-state="self_evolution_upgrade"] .nia-texture-sheet { background-position: 100% 0%; }
+body[data-avatar-state="self_evolution_upgrade"] .ferric-texture-sheet { background-position: 0% 0%; }
+
+/* 12: night_shift_afk */
+body[data-avatar-state="night_shift_afk"] .nia-texture-sheet { background-position: 100% 100%; }
+body[data-avatar-state="night_shift_afk"] .ferric-texture-sheet { background-position: 100% 100%; }
+
+/* Codex / Antigravity Style Faded Updating Grey Thinking Text Underneath Replies */
+.consul-thinking-underneath {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.14);
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.58);
+  font-style: italic;
+  line-height: 1.35;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  transition: opacity 0.3s ease;
+}
+
+.consul-thinking-underneath .thinking-dot,
+.consul-cli-thinking .thinking-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.58);
+  margin-top: 4px;
+  flex-shrink: 0;
+  animation: consulThinkingPulse 1.6s infinite ease-in-out;
+}
+
+@keyframes consulThinkingPulse {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(0.75); }
+}

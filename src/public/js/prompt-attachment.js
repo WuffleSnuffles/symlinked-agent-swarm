@@ -68,33 +68,54 @@ export class PromptAttachmentManager {
       });
     }
 
-    // 3. Clipboard Image/File Paste on Prompt Input & Dropzone
-    const promptInput = document.getElementById('overseer-prompt-input');
-    const pasteTarget = promptInput || this.dropzone;
-    if (pasteTarget) {
-      pasteTarget.addEventListener('paste', (e) => {
-        const items = e.clipboardData && e.clipboardData.items;
-        if (!items) return;
-        let handledImage = false;
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
+    // 3. Clipboard Image/File Paste on Prompt Input, Dropzone & Console Document
+    const handleClipboardPaste = (e) => {
+      if (e._panopticonPasteHandled) return;
+      const clipboard = e.clipboardData;
+      if (!clipboard) return;
+
+      const extractedFiles = [];
+      if (clipboard.items && clipboard.items.length > 0) {
+        for (let i = 0; i < clipboard.items.length; i++) {
+          const item = clipboard.items[i];
           if (item.kind === 'file') {
-            const file = item.getAsFile();
-            if (file) {
-              const ext = (file.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
-              const namedFile = file.name && file.name !== 'image.png'
-                ? file
-                : new File([file], `clipboard-${Date.now()}.${ext}`, { type: file.type });
-              this.addFileAttachment(namedFile);
-              handledImage = true;
-            }
+            const f = item.getAsFile();
+            if (f) extractedFiles.push(f);
           }
         }
-        if (handledImage) {
-          e.preventDefault();
+      } else if (clipboard.files && clipboard.files.length > 0) {
+        for (let i = 0; i < clipboard.files.length; i++) {
+          extractedFiles.push(clipboard.files[i]);
         }
-      });
-    }
+      }
+
+      if (extractedFiles.length === 0) return;
+
+      e._panopticonPasteHandled = true;
+      for (const file of extractedFiles) {
+        const ext = ((file.type && file.type.split('/')[1]) || 'png').replace(/[^a-z0-9]/gi, '');
+        const namedFile =
+          file.name && file.name !== 'image.png'
+            ? file
+            : new File([file], `clipboard-${Date.now()}.${ext}`, { type: file.type || 'image/png' });
+        this.addFileAttachment(namedFile);
+      }
+      e.preventDefault();
+    };
+
+    const promptInput = document.getElementById('overseer-prompt-input');
+    if (promptInput) promptInput.addEventListener('paste', handleClipboardPaste);
+    if (this.dropzone) this.dropzone.addEventListener('paste', handleClipboardPaste);
+    document.addEventListener('paste', (e) => {
+      const active = document.activeElement;
+      const isOtherInput =
+        active &&
+        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') &&
+        active.id !== 'overseer-prompt-input';
+      if (!isOtherInput) {
+        handleClipboardPaste(e);
+      }
+    });
 
     // 4. Drag and Drop Zone
     if (this.dropzone) {
@@ -206,9 +227,13 @@ export class PromptAttachmentManager {
   }
 
   addFileAttachment(file, customPath = null) {
-    const isImage = file && typeof file.type === 'string' && file.type.startsWith('image/');
-    const previewUrl = isImage && typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(file) : null;
-    this.stagedAttachments.push({
+    const isImage =
+      file &&
+      ((typeof file.type === 'string' && file.type.startsWith('image/')) ||
+        /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name || ''));
+    const previewUrl =
+      isImage && typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(file) : null;
+    const attObj = {
       id: 'att_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       type: isImage ? 'IMAGE' : 'FILE',
       name: file.name,
@@ -216,8 +241,24 @@ export class PromptAttachmentManager {
       size: file.size,
       rawFile: file,
       previewUrl,
-    });
+      url: previewUrl,
+      dataUrl: null,
+    };
+    this.stagedAttachments.push(attObj);
     this.renderChips();
+
+    if (isImage && typeof FileReader !== 'undefined') {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          attObj.dataUrl = reader.result;
+          attObj.url = reader.result;
+          attObj.previewUrl = reader.result;
+          this.renderChips();
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   }
 
   addFolderFromFileList(fileList) {
@@ -285,8 +326,9 @@ export class PromptAttachmentManager {
       const sizeStr = this.formatBytes(att.size);
       const detailStr = att.type === 'FOLDER' ? `${att.fileCount} files (${sizeStr})` : sizeStr;
 
-      const thumbHtml = att.previewUrl
-        ? `<img class="chip-thumb" src="${att.previewUrl}" alt="${att.name}" />`
+      const imgSrc = att.dataUrl || att.url || att.previewUrl;
+      const thumbHtml = imgSrc
+        ? `<img class="chip-thumb" src="${imgSrc}" alt="${att.name}" style="width: 32px; height: 32px; object-fit: cover; border-radius: 2px; border: 1px solid var(--color-cyan);" />`
         : `<span class="chip-badge">${att.type}</span>`;
 
       chip.innerHTML = `
@@ -434,17 +476,55 @@ export class PromptAttachmentManager {
   }
 
   getStagedAttachments() {
-    return [...this.stagedAttachments];
+    return this.stagedAttachments.map(({ rawFile, ...rest }) => ({
+      ...rest,
+      url: rest.dataUrl || rest.url || rest.previewUrl || null,
+      previewUrl: rest.dataUrl || rest.previewUrl || rest.url || null,
+    }));
+  }
+
+  async getSerializableAttachments() {
+    return Promise.all(
+      this.stagedAttachments.map(async ({ rawFile, previewUrl, dataUrl, ...attachment }) => {
+        let resolvedUrl = dataUrl || attachment.url || previewUrl || null;
+        if (attachment.type === 'IMAGE' && rawFile && (!resolvedUrl || resolvedUrl.startsWith('blob:'))) {
+          try {
+            resolvedUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = () => reject(new Error(`Could not read ${attachment.name}`));
+              reader.readAsDataURL(rawFile);
+            });
+          } catch {}
+        }
+        return {
+          ...attachment,
+          url: resolvedUrl,
+          previewUrl: resolvedUrl,
+        };
+      })
+    );
   }
 }
 
-let attachmentManagerInstance = null;
+let attachmentManagerInstance =
+  (typeof window !== 'undefined' && window.__panopticonAttachmentManager) || null;
 export function initPromptAttachments() {
+  if (typeof window !== 'undefined' && window.__panopticonAttachmentManager) {
+    attachmentManagerInstance = window.__panopticonAttachmentManager;
+    return attachmentManagerInstance;
+  }
   if (!attachmentManagerInstance) {
     attachmentManagerInstance = new PromptAttachmentManager();
+    if (typeof window !== 'undefined') {
+      window.__panopticonAttachmentManager = attachmentManagerInstance;
+    }
   }
   return attachmentManagerInstance;
 }
 export function getPromptAttachments() {
+  if (typeof window !== 'undefined' && window.__panopticonAttachmentManager) {
+    return window.__panopticonAttachmentManager;
+  }
   return attachmentManagerInstance;
 }

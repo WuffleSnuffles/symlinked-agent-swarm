@@ -8,15 +8,15 @@
  *    inter-window pop-out panel synchronization.
  */
 
-import { initTwinSauron } from './twin-sauron-canvas.js';
-import { initConsoleResize } from './console-resize.js';
-import { initConsularAvatars } from './consular-avatars.js';
-import { initPromptAttachments } from './prompt-attachment.js';
-import { initMediaRenderer } from './media-renderer.js';
-import { initQuestionWidget } from './question-widget.js';
-import { initCubicleGrid, updateCubicleState } from './cubicle-grid.js';
-import { initOverseerConsole, appendDialogue } from './overseer-console.js';
-import { initTaskboard, updateTasks, updateMissionProgress } from './taskboard-view.js';
+import { initTwinSauron } from './twin-sauron-canvas.js?v=20261026c';
+import { initConsoleResize } from './console-resize.js?v=20261026c';
+import { initConsularAvatars } from './consular-avatars.js?v=20261026k';
+import { initPromptAttachments } from './prompt-attachment.js?v=20261026g';
+import { initMediaRenderer } from './media-renderer.js?v=20261026c';
+import { initQuestionWidget } from './question-widget.js?v=20261026i';
+import { initCubicleGrid, updateCubicleState } from './cubicle-grid.js?v=20261026f';
+import { initOverseerConsole, appendDialogue, updateConsularThinking } from './overseer-console.js?v=20261026l';
+import { initTaskboard, updateTasks, updateMissionProgress } from './taskboard-view.js?v=20261026c';
 
 export class PanopticonApp {
   constructor() {
@@ -163,6 +163,8 @@ export class PanopticonApp {
       this.ws.onopen = () => {
         const beacon = document.getElementById('ws-status-beacon');
         if (beacon) beacon.classList.remove('offline');
+        // Recover persisted messages missed during disconnection.
+        void this.refreshDialogue();
       };
 
       this.ws.onclose = () => {
@@ -208,13 +210,15 @@ export class PanopticonApp {
       }
     }
 
-    // 4. Dialogue Stream
+    // 4. Dialogue Stream & Live Consular Thinking
     if (type === 'CONSULAR_DIALOGUE') {
       appendDialogue(payload);
+    } else if (type === 'CONSULAR_THINKING') {
+      updateConsularThinking(payload);
     }
 
     // 5. Questions Widget
-    if (type === 'CONSULAR_QUESTION_ASKED') {
+    if (type === 'CONSULAR_QUESTION_ASKED' || type === 'CONSULAR_QUESTION_ANSWERED') {
       this.questionWidget?.addQuestion(payload.question || payload);
     }
 
@@ -226,6 +230,9 @@ export class PanopticonApp {
     // 7. Tasks & Mission Progress
     if (type.startsWith('TASK_')) {
       this.refreshTasks();
+    }
+    if (type === 'SWARM_ACTIVITY_HEARTBEAT' || type === 'CUBICLE_UPDATED' || type.startsWith('TASK_')) {
+      this.consoleController?.handleActivityEvent?.(type, payload);
     }
   }
 
@@ -241,14 +248,8 @@ export class PanopticonApp {
       // 2. Tasks
       await this.refreshTasks();
 
-      // 3. Dialogue
-      const dialRes = await fetch('/api/governance/dialogue?limit=30');
-      if (dialRes.ok) {
-        const data = await dialRes.json();
-        if (data.dialogue && Array.isArray(data.dialogue)) {
-          data.dialogue.forEach((m) => appendDialogue(m));
-        }
-      }
+      // 3. Dialogue, including older debate entries
+      await this.refreshDialogue();
 
       // 4. Questions
       const questRes = await fetch('/api/governance/questions');
@@ -276,6 +277,19 @@ export class PanopticonApp {
         this.cubicleGrid.setContracts(data.contracts || []);
       }
     } catch {}
+  }
+
+  async refreshDialogue() {
+    try {
+      const res = await fetch('/api/governance/dialogue?limit=500', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.dialogue)) {
+        data.dialogue.forEach((message) => appendDialogue(message));
+      }
+    } catch (error) {
+      console.warn('Unable to restore consular dialogue', error);
+    }
   }
 
   async refreshTasks() {

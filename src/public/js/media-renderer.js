@@ -139,7 +139,11 @@ export class MediaRenderer {
   renderMediaCard(media) {
     const card = document.createElement('div');
     const type = (media.type || 'image').toLowerCase();
-    const url = media.url || `/api/media/serve?path=${encodeURIComponent(media.path || '')}`;
+    const url =
+      media.url ||
+      media.dataUrl ||
+      media.previewUrl ||
+      `/api/media/serve?path=${encodeURIComponent(media.path || '')}`;
     const name = media.name || (media.path ? media.path.split(/[\/\\]/).pop() : 'Artifact');
 
     if (type === 'pdf') {
@@ -196,9 +200,19 @@ export class MediaRenderer {
           </div>
         </div>
       `;
-      card.querySelector('.image-thumb-wrapper').addEventListener('click', () => {
-        this.openLightbox(url, name);
-      });
+      const imgEl = card.querySelector('img');
+      const thumbWrapper = card.querySelector('.image-thumb-wrapper');
+      if (imgEl && thumbWrapper) {
+        imgEl.addEventListener('error', () => {
+          thumbWrapper.style.cursor = 'default';
+          thumbWrapper.innerHTML = `<div style="padding: 8px 10px; font-size: 11px; color: var(--color-text-dim); font-style: italic;">[Attached image: ${name} — prior temporary browser blob expired; newly pasted images persist inline]</div>`;
+        });
+        thumbWrapper.addEventListener('click', () => {
+          if (imgEl.complete && imgEl.naturalWidth > 0) {
+            this.openLightbox(url, name);
+          }
+        });
+      }
     }
 
     return card;
@@ -209,9 +223,15 @@ let mediaRendererInstance = null;
 export function initMediaRenderer() {
   if (!mediaRendererInstance) {
     mediaRendererInstance = new MediaRenderer();
+    if (typeof window !== 'undefined') {
+      window.__panopticonMediaRenderer = mediaRendererInstance;
+    }
   }
   return mediaRendererInstance;
 }
 export function getMediaRenderer() {
-  return mediaRendererInstance;
+  return (
+    mediaRendererInstance ||
+    (typeof window !== 'undefined' ? window.__panopticonMediaRenderer : null)
+  );
 }

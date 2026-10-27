@@ -7,14 +7,22 @@
  * - Arrow navigation (← / →), progress pills.
  * - Enumerated options with (Recommended) badges.
  * - Default custom write-in input field.
- * - Skip and Submit buttons.
+ * - High-contrast Skip and Submit buttons with unified monospace font.
  */
+
+.consular-question-widget,
+.consular-question-widget *,
+.consular-question-widget button,
+.consular-question-widget input,
+.consular-question-widget textarea {
+  font-family: var(--font-mono);
+}
 
 .consular-question-widget {
   background: #0d0f17;
   border: 1px solid var(--color-cyan);
   box-shadow: 0 0 20px rgba(6, 182, 212, 0.2);
-  margin: 10px 0;
+  margin: 10px 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -26,13 +34,15 @@
 
 /* Stepper Header Bar */
 .widget-stepper-header {
-  height: 36px;
+  min-height: 38px;
   background: #121522;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
 }
 
 .stepper-origin {
@@ -40,16 +50,17 @@
   align-items: center;
   gap: 8px;
 }
+.consul-badge,
 .consul-badge.consul-nia {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--color-cyan);
   letter-spacing: 0.5px;
 }
 .stepper-indicator {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-dim);
+  color: var(--color-text-bright);
 }
 
 .stepper-progress-pills {
@@ -73,28 +84,38 @@
 .stepper-nav-controls {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
-.btn-step-nav {
-  background: #191d2c;
-  color: var(--color-text-normal);
-  border: 1px solid var(--border-color);
+.btn-step-nav,
+#btn-step-prev,
+#btn-step-next {
+  background: #1b2234;
+  color: var(--color-text-bright);
+  border: 1px solid #3b4968;
   font-family: var(--font-mono);
   font-size: 11px;
-  width: 24px;
-  height: 24px;
-  display: flex;
+  font-weight: 700;
+  padding: 4px 10px;
+  min-height: 26px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.15s ease;
 }
-.btn-step-nav:hover:not(:disabled) {
+.btn-step-nav:hover:not(:disabled),
+#btn-step-prev:hover:not(:disabled),
+#btn-step-next:hover:not(:disabled) {
   background: var(--color-cyan);
-  color: #000;
+  border-color: var(--color-cyan);
+  color: #041016;
 }
-.btn-step-nav:disabled {
-  opacity: 0.35;
+.btn-step-nav:disabled,
+#btn-step-prev:disabled,
+#btn-step-next:disabled {
+  background: #121622;
+  color: #64748b;
+  border-color: #262e42;
   cursor: not-allowed;
 }
 
@@ -108,15 +129,24 @@
   font-size: 13px;
   font-weight: 700;
   color: var(--color-text-bright);
-  line-height: 1.4;
+  line-height: 1.45;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .widget-prompt-context {
   font-size: 11px;
-  color: var(--color-text-dim);
+  color: var(--color-text-normal);
   margin-top: 4px;
 }
 
 /* Enumerated Options List */
+.consular-question-widget fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
 .widget-options-container {
   padding: 10px 12px;
   display: flex;
@@ -126,17 +156,18 @@
 }
 
 .option-row {
-  background: #111420;
-  border: 1px solid var(--border-color);
+  background: #121726;
+  border: 1px solid #2e384f;
   transition: all 0.15s ease;
+  cursor: pointer;
 }
 .option-row:hover {
-  border-color: var(--border-active);
-  background: #161a29;
+  border-color: var(--color-cyan);
+  background: #182034;
 }
 .option-row.selected {
   border-color: var(--color-cyan);
-  background: rgba(6, 182, 212, 0.08);
+  background: rgba(6, 182, 212, 0.14);
 }
 .option-row.option-recommended {
   border-left: 3px solid var(--color-amber);
@@ -155,18 +186,24 @@
   margin-top: 3px;
   cursor: pointer;
   accent-color: var(--color-cyan);
+  appearance: auto;
+  opacity: 1;
+  position: static;
+  width: auto;
+  height: auto;
 }
 
 .option-enumeration-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--color-text-dim);
-  margin-top: 2px;
-  min-width: 18px;
+  color: var(--color-cyan);
+  margin-top: 1px;
+  min-width: 22px;
 }
 
 .option-body {
   flex: 1;
+  display: block;
 }
 
 .option-title-row {
@@ -178,24 +215,26 @@
 
 .option-title {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-bright);
 }
 
 .badge-recommended {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   padding: 1px 6px;
-  background: rgba(245, 158, 11, 0.15);
+  background: rgba(245, 158, 11, 0.18);
   border: 1px solid var(--color-amber);
-  color: var(--color-amber);
+  color: #fbbf24;
   letter-spacing: 0.5px;
 }
 
-.option-desc {
+.option-desc,
+.question-custom-label {
+  display: block;
   font-size: 11px;
-  color: var(--color-text-dim);
-  margin-top: 2px;
+  color: var(--color-text-normal);
+  margin-top: 3px;
 }
 
 /* Default Custom Write-In Input */
@@ -204,64 +243,95 @@
   width: 100%;
 }
 
-.input-custom-response {
+.input-custom-response,
+.consular-question-widget textarea {
   width: 100%;
-  background: #090a0f;
-  border: 1px solid var(--border-color);
+  box-sizing: border-box;
+  min-height: 56px;
+  background: #090b11;
+  border: 1px solid #3b4968;
   color: var(--color-text-bright);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.4;
   padding: 6px 8px;
   outline: none;
 }
-.input-custom-response:focus {
+.input-custom-response:focus,
+.consular-question-widget textarea:focus {
   border-color: var(--color-cyan);
 }
 
 /* Bottom Action Bar */
 .widget-action-bar {
-  height: 42px;
-  background: #0f121d;
+  min-height: 44px;
+  background: #0f1320;
   border-top: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  gap: 10px;
+  padding: 8px 12px;
 }
 
-.btn-widget-skip {
-  background: transparent;
-  color: var(--color-text-dim);
-  border: 1px solid var(--border-color);
+.btn-widget-skip,
+#btn-question-skip {
+  background: #1b2234;
+  color: var(--color-text-bright);
+  border: 1px solid #475569;
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  padding: 5px 10px;
+  font-weight: 700;
+  padding: 6px 12px;
   cursor: pointer;
   letter-spacing: 0.5px;
   transition: all 0.15s ease;
 }
-.btn-widget-skip:hover {
-  background: var(--border-active);
-  color: var(--color-text-bright);
+.btn-widget-skip:hover:not(:disabled),
+#btn-question-skip:hover:not(:disabled) {
+  background: #28334d;
+  border-color: var(--color-cyan);
+  color: #ffffff;
 }
 
-.btn-widget-submit {
+.btn-widget-submit,
+#btn-question-submit {
   background: var(--color-cyan);
-  color: #000000;
-  border: none;
+  color: #031016;
+  border: 1px solid #22d3ee;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   padding: 6px 14px;
   cursor: pointer;
   letter-spacing: 0.5px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   transition: all 0.15s ease;
 }
-.btn-widget-submit:hover {
+.btn-widget-submit:hover:not(:disabled),
+#btn-question-submit:hover:not(:disabled) {
   background: #22d3ee;
+  color: #000000;
   box-shadow: 0 0 12px var(--color-cyan-glow);
+}
+
+.consular-question-widget :focus-visible {
+  outline: 2px solid #77ddff;
+  outline-offset: 2px;
+}
+
+.consular-question-widget .question-status {
+  margin: 0;
+  padding: 6px 12px;
+  background: #090b10;
+  border-top: 1px solid #1a1e2d;
+  font-size: 11px;
+  color: var(--color-text-normal);
+  overflow-wrap: anywhere;
+}
+.consular-question-widget .question-status.is-error {
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.28);
 }
